@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
-import { useLanguage } from '../../context/LanguageContext';
+import { useLanguage } from '../../hooks/useLanguage';
 
 export default function FilterToolbar({
   searchValue = '',
@@ -12,11 +12,13 @@ export default function FilterToolbar({
 }) {
   const { lang } = useLanguage();
   const [localSearch, setLocalSearch] = useState(searchValue);
+  const [prevSearchProp, setPrevSearchProp] = useState(searchValue);
   const debouncedSearch = useDebounce(localSearch, 350);
 
-  useEffect(() => {
+  if (searchValue !== prevSearchProp) {
+    setPrevSearchProp(searchValue);
     setLocalSearch(searchValue);
-  }, [searchValue]);
+  }
 
   useEffect(() => {
     if (onSearchChange && debouncedSearch !== searchValue) {

@@ -1,5 +1,5 @@
 import { normalizeCurrency } from '../../utils/currency.util';
-import { useLanguage } from '../../context/LanguageContext';
+import { useLanguage } from '../../hooks/useLanguage';
 
 export default function CurrencyDisplay({
   currency,

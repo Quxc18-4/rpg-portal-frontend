@@ -1,5 +1,5 @@
 import ItemSlotCell from './ItemSlotCell';
-import { useLanguage } from '../../context/LanguageContext';
+import { useLanguage } from '../../hooks/useLanguage';
 
 export default function ChestGrid({
   title,

@@ -1,7 +1,6 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { STORAGE_KEYS } from '../config/constants';
-
-const LanguageContext = createContext(null);
+import { LanguageContext } from './language.context';
 
 export function LanguageProvider({ children }) {
   const [lang, setLang] = useState(() => {
@@ -24,10 +23,4 @@ export function LanguageProvider({ children }) {
       {children}
     </LanguageContext.Provider>
   );
-}
-
-export function useLanguage() {
-  const ctx = useContext(LanguageContext);
-  if (!ctx) throw new Error('useLanguage must be used inside LanguageProvider');
-  return ctx;
 }

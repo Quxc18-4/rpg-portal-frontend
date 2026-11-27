@@ -1,7 +1,7 @@
 import { NavLink, Link } from 'react-router-dom';
 import { PRIMARY_NAV_ITEMS } from '../config/navigation';
-import { useAuth } from '../context/AuthContext';
-import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../hooks/useAuth';
+import { useLanguage } from '../hooks/useLanguage';
 
 export default function TopNavBar() {
   const { user, isAuthenticated, checkRole, logout } = useAuth();
