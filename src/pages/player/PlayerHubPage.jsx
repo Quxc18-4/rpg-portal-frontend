@@ -14,44 +14,17 @@ import StatusTag from '../../components/ui/StatusTag';
 const MAIN_INVENTORY_SLOTS = Array.from({ length: 27 }, (_, i) => i + 9);
 const HOTBAR_SLOTS = Array.from({ length: 9 }, (_, i) => i);
 
-const VANILLA_ARMOR_SLOTS = [
-  { slot: 39, key: 'helmet', label: { vi: 'MŨ GIÁP', en: 'HELMET' } },
-  { slot: 38, key: 'chestplate', label: { vi: 'ÁO GIÁP', en: 'CHESTPLATE' } },
-  { slot: 37, key: 'leggings', label: { vi: 'QUẦN GIÁP', en: 'LEGGINGS' } },
-  { slot: 36, key: 'boots', label: { vi: 'GIÀY GIÁP', en: 'BOOTS' } },
-  { slot: 40, key: 'offHand', label: { vi: 'TAY PHỤ', en: 'OFF HAND' } },
-];
-
-// Mirror từ RPGPlayer.getRequiredExp()
-function getRequiredPlayerExp(level) {
-  const safeLevel = Math.max(1, Number(level || 1));
-  const baseExp = 300 + safeLevel * 150 + Math.pow(safeLevel, 3.0) * 1.5;
-
-  let stageMultiplier = 1.0;
-  if (safeLevel >= 16 && safeLevel < 22) {
-    stageMultiplier = 1.5;
-  } else if (safeLevel >= 22 && safeLevel < 32) {
-    stageMultiplier = 3.0;
-  } else if (safeLevel >= 32 && safeLevel < 50) {
-    stageMultiplier = 6.0;
-  } else if (safeLevel >= 50 && safeLevel < 75) {
-    stageMultiplier = 15.0;
-  } else if (safeLevel >= 75 && safeLevel < 101) {
-    stageMultiplier = 30.0;
-  } else if (safeLevel >= 101 && safeLevel < 150) {
-    stageMultiplier = 50.0;
-  } else if (safeLevel >= 150) {
-    stageMultiplier = 80.0;
-  }
-
-  return baseExp * stageMultiplier;
-}
-
-// Mirror từ JobManager.getRequiredJobExp(currentLevel)
-function getRequiredJobExp(level) {
-  const safeLevel = Math.max(1, Number(level || 1));
-  return Math.pow(safeLevel, 2) * 50 + 500;
-}
+const EQUIPMENT_LABELS = {
+  helmet: { vi: 'MŨ GIÁP', en: 'HELMET' },
+  chestplate: { vi: 'ÁO GIÁP', en: 'CHESTPLATE' },
+  leggings: { vi: 'QUẦN GIÁP', en: 'LEGGINGS' },
+  boots: { vi: 'GIÀY GIÁP', en: 'BOOTS' },
+  mainHand: { vi: 'VŨ KHÍ CHÍNH', en: 'MAIN HAND' },
+  offHand: { vi: 'TAY PHỤ', en: 'OFF HAND' },
+  necklace: { vi: 'DÂY CHUYỀN', en: 'NECKLACE' },
+  ring: { vi: 'NHẪN', en: 'RING' },
+  artifact: { vi: 'CỔ VẬT', en: 'ARTIFACT' },
+};
 
 function resolveStringLabel(value, fallback = '') {
   if (value === null || value === undefined) return fallback;
@@ -62,17 +35,11 @@ function resolveStringLabel(value, fallback = '') {
 }
 
 function normalizeRankDetail(rawRank) {
-  if (!rawRank || typeof rawRank !== 'object') {
-    return {
-      rank: rawRank ? String(rawRank) : 'F-',
-      reputation: 0,
-      effectiveReputation: 0,
-      usableReputation: 0,
-      nextRank: null,
-      nextRankMinRep: 0,
-      remainingToNextRank: 0,
-      progressPercent: 0,
-    };
+  if (!rawRank) {
+    return { rank: 'F-', reputation: 0, nextRank: null, nextRankMinRep: 0, remainingToNextRank: 0, progressPercent: 0, usableReputation: 0 };
+  }
+  if (typeof rawRank === 'string') {
+    return { rank: rawRank, reputation: 0, nextRank: null, nextRankMinRep: 0, remainingToNextRank: 0, progressPercent: 0, usableReputation: 0 };
   }
   return {
     rank: rawRank.rank || 'F-',
@@ -86,39 +53,53 @@ function normalizeRankDetail(rawRank) {
   };
 }
 
-function formatExpNumber(value) {
-  const num = Number(value ?? 0);
-  if (!Number.isFinite(num)) return '0';
-  return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+function normalizeCharacterList(profile) {
+  if (!profile) return [];
+  if (Array.isArray(profile.characters) && profile.characters.length > 0) {
+    return profile.characters;
+  }
+  if (Array.isArray(profile.slots) && profile.slots.length > 0) {
+    return profile.slots;
+  }
+  if (profile.activeCharacter || profile.character) {
+    return [profile.activeCharacter || profile.character];
+  }
+  return [
+    {
+      slot: 1,
+      className: resolveStringLabel(profile.className || profile.rpgClass, 'ADVENTURER'),
+      level: profile.level ?? 1,
+      exp: profile.exp ?? 0,
+      maxExp: profile.maxExp ?? 100,
+      stats: profile.stats || profile.attributes || {},
+      equipment: profile.equipment || profile.armor || {},
+      inventory: profile.inventory || [],
+    },
+  ];
 }
 
-function resolveWaystoneName(row) {
-  return (
-    row.name ||
-    row.waystoneName ||
-    row.displayName ||
-    row.title ||
-    row.label ||
-    row.waystoneId ||
-    row.id ||
-    row._id ||
-    'WAYSTONE'
-  );
-}
+function normalizeEquipmentEntries(equipmentRaw, lang) {
+  if (!equipmentRaw) return [];
 
-function resolveWaystoneCoords(row) {
-  const src =
-    (row.location && typeof row.location === 'object' && row.location) ||
-    (row.coords && typeof row.coords === 'object' && row.coords) ||
-    (row.position && typeof row.position === 'object' && row.position) ||
-    row;
+  if (Array.isArray(equipmentRaw)) {
+    return equipmentRaw.map((item, idx) => ({
+      key: item.slotName || `equip_${idx}`,
+      label: item.slotLabel || item.slotName || `SLOT #${idx + 1}`,
+      item,
+    }));
+  }
 
-  return {
-    world: src.world || row.world || src.dimension || 'world',
-    x: Math.round(Number(src.x ?? src.posX ?? src.blockX ?? 0)),
-    y: Math.round(Number(src.y ?? src.posY ?? src.blockY ?? 0)),
-    z: Math.round(Number(src.z ?? src.posZ ?? src.blockZ ?? 0)),
-  };
+  if (typeof equipmentRaw === 'object') {
+    return Object.entries(equipmentRaw).map(([key, item]) => ({
+      key,
+      label:
+        EQUIPMENT_LABELS[key]?.[lang] ||
+        key.replace(/([A-Z])/g, ' $1').toUpperCase(),
+      item: item && typeof item === 'object' ? item : null,
+    }));
+  }
+
+  return [];
 }
 
 async function safeOptionalFetch(fetcher) {
@@ -132,8 +113,7 @@ async function safeOptionalFetch(fetcher) {
 export default function PlayerHubPage() {
   const { lang } = useLanguage();
   const [activeTab, setActiveTab] = useState('INVENTORY');
-  const [requestedSlot, setRequestedSlot] = useState(null);
-  const [selectedMountSlot, setSelectedMountSlot] = useState(null);
+  const [selectedSlotIdx, setSelectedSlotIdx] = useState(0);
   const [inspectedItem, setInspectedItem] = useState(null);
 
   const {
@@ -141,47 +121,53 @@ export default function PlayerHubPage() {
     loading: profileLoading,
     error: profileError,
     reload: reloadProfile,
-  } = useAsyncData(
-    () => playerApi.getMyProfile(requestedSlot ? { slot: requestedSlot } : {}),
-    [requestedSlot]
+  } = useAsyncData(() => playerApi.getMyProfile(), []);
+
+  const hasEmbeddedInventory = Boolean(
+    profile?.inventory ||
+      profile?.activeCharacter?.inventory ||
+      profile?.characters?.[0]?.inventory
+  );
+  const hasEmbeddedMounts = Boolean(profile?.mounts || profile?.activeMount);
+  const hasEmbeddedJobs = Boolean(profile?.jobs || profile?.professions);
+  const hasEmbeddedQuests = Boolean(profile?.quests);
+  const hasEmbeddedWaystones = Boolean(profile?.waystones);
+  const hasEmbeddedFriends = Boolean(profile?.friends);
+
+  const { data: extraInventory, loading: invLoading } = useAsyncData(
+    () => safeOptionalFetch(() => playerApi.getMyInventory()),
+    [hasEmbeddedInventory],
+    { immediate: Boolean(profile && !hasEmbeddedInventory) }
   );
 
-  const activeSlotNumber = requestedSlot ?? profile?.selectedSlot ?? profile?.activeSlot ?? 1;
-
-  const { data: invPayload, loading: invLoading } = useAsyncData(
-    () => safeOptionalFetch(() => playerApi.getMyInventory({ slot: activeSlotNumber })),
-    [activeSlotNumber],
-    { immediate: Boolean(profile) }
-  );
-
-  const { data: mountsData, loading: mountsLoading } = useAsyncData(
+  const { data: extraMounts, loading: mountsLoading } = useAsyncData(
     () => safeOptionalFetch(() => playerApi.getMyMounts()),
-    [activeTab],
-    { immediate: Boolean(profile && activeTab === 'MOUNTS') }
+    [activeTab, hasEmbeddedMounts],
+    { immediate: Boolean(profile && activeTab === 'MOUNTS' && !hasEmbeddedMounts) }
   );
 
-  const { data: jobsData, loading: jobsLoading } = useAsyncData(
+  const { data: extraJobs, loading: jobsLoading } = useAsyncData(
     () => safeOptionalFetch(() => playerApi.getMyJobs()),
-    [activeTab],
-    { immediate: Boolean(profile && activeTab === 'PROGRESSION') }
+    [activeTab, hasEmbeddedJobs],
+    { immediate: Boolean(profile && activeTab === 'PROGRESSION' && !hasEmbeddedJobs) }
   );
 
-  const { data: questsData, loading: questsLoading } = useAsyncData(
+  const { data: extraQuests, loading: questsLoading } = useAsyncData(
     () => safeOptionalFetch(() => playerApi.getMyQuests()),
-    [activeTab],
-    { immediate: Boolean(profile && activeTab === 'PROGRESSION') }
+    [activeTab, hasEmbeddedQuests],
+    { immediate: Boolean(profile && activeTab === 'PROGRESSION' && !hasEmbeddedQuests) }
   );
 
-  const { data: waystonesData, loading: waystonesLoading } = useAsyncData(
+  const { data: extraWaystones } = useAsyncData(
     () => safeOptionalFetch(() => playerApi.getMyWaystones()),
-    [activeTab],
-    { immediate: Boolean(profile && activeTab === 'WORLD_SOCIAL') }
+    [activeTab, hasEmbeddedWaystones],
+    { immediate: Boolean(profile && activeTab === 'WORLD_SOCIAL' && !hasEmbeddedWaystones) }
   );
 
-  const { data: friendsData, loading: friendsLoading } = useAsyncData(
+  const { data: extraFriends } = useAsyncData(
     () => safeOptionalFetch(() => playerApi.getMyFriends()),
-    [activeTab],
-    { immediate: Boolean(profile && activeTab === 'WORLD_SOCIAL') }
+    [activeTab, hasEmbeddedFriends],
+    { immediate: Boolean(profile && activeTab === 'WORLD_SOCIAL' && !hasEmbeddedFriends) }
   );
 
   const { data: rewardsData, loading: rewardsLoading } = useAsyncData(
@@ -221,216 +207,127 @@ export default function PlayerHubPage() {
     );
   }
 
-  const rankDetail = normalizeRankDetail(profile.adventurerRank);
+  const rankDetail = normalizeRankDetail(
+    profile.adventurerRank || profile.player?.adventurerRank
+  );
+  const characters = normalizeCharacterList(profile);
+  const safeCharIndex = Math.min(selectedSlotIdx, Math.max(0, characters.length - 1));
+  const currentChar = characters[safeCharIndex] || {};
+
   const playerIdentity = {
-    username: profile.username || 'Unknown',
-    uuid: profile.uuid,
-    isVip: Boolean(profile.isVip),
+    username: profile.username || profile.player?.username || 'Unknown',
+    uuid: profile.uuid || profile.player?.uuid,
+    isVip: Boolean(profile.isVip ?? profile.player?.isVip),
     adventurerRank: rankDetail.rank,
-    guildTag: profile.guild?.tag,
+    guildTag: profile.guild?.tag || profile.guildTag,
     role: profile.role,
   };
 
-  // Danh sách slot từ player.service.js (slotsSummary)
-  const slotsList =
-    Array.isArray(profile.slotsSummary) && profile.slotsSummary.length > 0
-      ? profile.slotsSummary.filter((s) => s.isCreated || s.slot === activeSlotNumber)
-      : [
-          {
-            slot: activeSlotNumber,
-            isActive: true,
-            isCreated: true,
-            class: profile.class || 'commoner',
-            level: profile.level ?? 1,
-            currency: profile.currency,
-          },
-        ];
+  const guildInfo = profile.guild || null;
+  const currencyData = profile.balance ?? profile.currency ?? profile.coins ?? 0;
 
-  const charClassLabel = resolveStringLabel(profile.class, 'COMMONER').toUpperCase();
-  const charLevel = Number(profile.level ?? 1);
-  const charExp = Number(profile.exp ?? 0);
-  const charRequiredExp = Number(profile.requiredExp ?? getRequiredPlayerExp(charLevel));
-  const charExpPercent = Math.min(
-    100,
-    Math.max(
-      0,
-      Number(
-        profile.expProgressPercent ??
-          ((charExp / Math.max(1, charRequiredExp)) * 100).toFixed(2)
-      )
-    )
+  // Hợp nhất túi đồ & trang bị
+  const invPayload = extraInventory || {};
+  const inventoryItems = Array.isArray(currentChar.inventory)
+    ? currentChar.inventory
+    : Array.isArray(profile.inventory)
+    ? profile.inventory
+    : Array.isArray(invPayload.items)
+    ? invPayload.items
+    : Array.isArray(invPayload.inventory)
+    ? invPayload.inventory
+    : [];
+
+  const enderChestItems = Array.isArray(currentChar.enderChest)
+    ? currentChar.enderChest
+    : Array.isArray(profile.enderChest)
+    ? profile.enderChest
+    : Array.isArray(invPayload.enderChest)
+    ? invPayload.enderChest
+    : [];
+
+  const equipmentEntries = normalizeEquipmentEntries(
+    currentChar.equipment || profile.equipment || invPayload.equipment,
+    lang
   );
-  const charResource = Number(profile.resource ?? 100);
-  const elementsList = Array.isArray(profile.elements) ? profile.elements : [];
 
-  const statsObj = profile.attributes || {};
+  // Hợp nhất chỉ số chiến đấu
+  const statsObj = currentChar.stats || currentChar.attributes || profile.stats || {};
   const statEntries = Object.entries(statsObj).filter(
     ([, val]) => typeof val === 'number' || typeof val === 'string'
   );
 
-  // Dữ liệu túi đồ từ GET /players/me/inventory (vanillaInventory, enderChest, trinkets, backpacks)
-  const vanillaInventory = Array.isArray(invPayload?.vanillaInventory)
-    ? invPayload.vanillaInventory
+  // Hợp nhất thú cưỡi & kho yên
+  const mountsSource = extraMounts || profile;
+  const mountsList = Array.isArray(mountsSource?.mounts)
+    ? mountsSource.mounts
+    : Array.isArray(mountsSource?.items)
+    ? mountsSource.items
     : [];
-  const enderChestItems = Array.isArray(invPayload?.enderChest) ? invPayload.enderChest : [];
-  const trinketsList = Array.isArray(invPayload?.trinkets) ? invPayload.trinkets : [];
-  const backpacksList = Array.isArray(invPayload?.backpacks) ? invPayload.backpacks : [];
-
-  const vanillaSlotMap = new Map(
-    vanillaInventory.map((item) => [Number(item.slot), item])
-  );
-
-  const equippedArmorEntries = VANILLA_ARMOR_SLOTS.map((def) => ({
-    key: def.key,
-    label: def.label[lang],
-    item: vanillaSlotMap.get(def.slot) || null,
-  }));
-
-  const equippedTrinketEntries = trinketsList.map((item, idx) => ({
-    key: `trinket_${item.slot ?? idx}`,
-    label: String(item.tags?.trinket_type || `TRINKET #${idx + 1}`).toUpperCase(),
-    item,
-  }));
-
-  // Dữ liệu thú cưỡi từ GET /players/me/mounts
-  const mountsList = Array.isArray(mountsData?.mounts) ? mountsData.mounts : [];
   const activeMount =
-    mountsList.find((m) => m.slot === selectedMountSlot) || mountsList[0] || null;
-  const saddlebagItems = Array.isArray(activeMount?.saddleStorage?.items)
-    ? activeMount.saddleStorage.items
-    : [];
-  const saddlebagCapacity = Math.max(
-    9,
-    Number(activeMount?.saddleStorage?.capacity || saddlebagItems.length || 27)
-  );
-
-  // Dữ liệu nghề nghiệp từ GET /players/me/jobs (mirror công thức JobManager.java)
-  const jobsMapObj =
-    jobsData?.jobs && typeof jobsData.jobs === 'object' ? jobsData.jobs : {};
-  const professionsList = Object.entries(jobsMapObj).map(([jobId, info]) => {
-    const level = Number(info?.level ?? 1);
-    const exp = Number(info?.exp ?? 0);
-    const requiredExp = Number(info?.requiredExp ?? getRequiredJobExp(level));
-    const progressPercent = Math.min(
-      100,
-      Math.max(0, Number(info?.progressPercent ?? ((exp / requiredExp) * 100).toFixed(1)))
-    );
-
-    return {
-      id: jobId,
-      name: jobId.toUpperCase(),
-      isCurrent: String(jobsData?.currentJob || '').toUpperCase() === jobId.toUpperCase(),
-      level,
-      exp,
-      requiredExp,
-      progressPercent,
-      points: Number(info?.points ?? 0),
-      unlockedSkillsCount: Array.isArray(info?.unlockedSkills) ? info.unlockedSkills.length : 0,
-    };
-  });
-
-  // Dữ liệu nhiệm vụ từ GET /players/me/quests
-  const questRows = (() => {
-    if (!questsData) return [];
-    const rows = [];
-    const activeQuestsObj =
-      questsData.activeQuests && typeof questsData.activeQuests === 'object'
-        ? questsData.activeQuests
-        : {};
-    for (const [qId, qVal] of Object.entries(activeQuestsObj)) {
-      rows.push({
-        id: `active_${qId}`,
-        title: typeof qVal === 'object' ? qVal.title || qVal.name || qId : qId,
-        category: 'ACTIVE QUEST',
-        progressText:
-          typeof qVal === 'object' && qVal.progress !== undefined
-            ? `${qVal.progress}${qVal.target ? ` / ${qVal.target}` : ''}`
-            : String(qVal ?? 'IN PROGRESS'),
-        status: 'ACTIVE',
-      });
-    }
-
-    const activeBountiesObj =
-      questsData.activeBounties && typeof questsData.activeBounties === 'object'
-        ? questsData.activeBounties
-        : {};
-    for (const [bId, bVal] of Object.entries(activeBountiesObj)) {
-      rows.push({
-        id: `bounty_${bId}`,
-        title: typeof bVal === 'object' ? bVal.zoneName || bId : bId,
-        category: 'BOUNTY HUNT',
-        progressText: typeof bVal === 'object' ? JSON.stringify(bVal) : String(bVal ?? 'ACTIVE'),
-        status: 'BOUNTY',
-      });
-    }
-
-    for (const storyId of questsData.completedStoryQuests || []) {
-      rows.push({
-        id: `story_${storyId}`,
-        title: storyId,
-        category: 'STORY QUEST',
-        progressText: lang === 'vi' ? 'HOÀN TẤT' : 'DONE',
-        status: 'COMPLETED',
-      });
-    }
-
-    for (const dynId of questsData.completedDynamicQuests || []) {
-      rows.push({
-        id: `dyn_${dynId}`,
-        title: dynId,
-        category: 'DYNAMIC QUEST',
-        progressText: lang === 'vi' ? 'HOÀN TẤT' : 'DONE',
-        status: 'COMPLETED',
-      });
-    }
-
-    return rows;
-  })();
-
-  // Dữ liệu Waystones & Friends
-  const waystonesList = Array.isArray(waystonesData?.waystones)
-    ? waystonesData.waystones
-    : Array.isArray(waystonesData?.items)
-    ? waystonesData.items
-    : Array.isArray(waystonesData)
-    ? waystonesData
+    mountsSource?.activeMount ||
+    mountsList.find((m) => m.isActive || m.summoned) ||
+    mountsList[0] ||
+    null;
+  const saddlebagItems = Array.isArray(activeMount?.saddlebag)
+    ? activeMount.saddlebag
+    : Array.isArray(mountsSource?.saddlebag)
+    ? mountsSource.saddlebag
     : [];
 
-  const friendsList = Array.isArray(friendsData?.friends) ? friendsData.friends : [];
-  const pendingFriendsCount = Number(friendsData?.totalPendingRequests ?? 0);
+  // Hợp nhất nghề nghiệp (/players/me/jobs) & nhiệm vụ (/players/me/quests)
+  const jobsSource = extraJobs || currentChar || profile;
+  const jobsRaw =
+    jobsSource?.jobs || jobsSource?.professions || jobsSource?.items || jobsSource?.skills || [];
+  const professionsList = Array.isArray(jobsRaw)
+    ? jobsRaw
+    : Object.entries(jobsRaw).map(([id, val]) => ({
+        id,
+        name: id.toUpperCase(),
+        ...(typeof val === 'object' ? val : { level: val }),
+      }));
 
-  // Dữ liệu Hòm thưởng từ GET /players/me/rewards
-  const rewardRows = (() => {
-    if (!rewardsData) return [];
-    const rows = [];
-    for (const bounty of rewardsData.bountyRewards?.pendingList || []) {
-      rows.push({
-        id: `bounty_${bounty.bountyId}`,
-        type: 'BOUNTY REWARD',
-        title: bounty.zoneName || bounty.bountyId,
-        detail: `+${Number(bounty.reputation || 0).toLocaleString()} REP`,
-        coins: bounty.coins,
-        status: 'UNCLAIMED',
-      });
-    }
-    for (const kit of rewardsData.kits || []) {
-      rows.push({
-        id: `kit_${kit.kitName}`,
-        type: 'VIP / DAILY KIT',
-        title: `KIT: ${String(kit.kitName).toUpperCase()}`,
-        detail: kit.canClaim
-          ? lang === 'vi'
-            ? 'Sẵn sàng nhận trong game'
-            : 'Ready to claim in-game'
-          : `${Math.ceil(Number(kit.remainingMs || 0) / 60000)}m cooldown`,
-        coins: null,
-        status: kit.canClaim ? 'AVAILABLE' : 'COOLDOWN',
-      });
-    }
-    return rows;
-  })();
+  const questsSource = extraQuests || profile;
+  const questsList = Array.isArray(questsSource?.quests)
+    ? questsSource.quests
+    : Array.isArray(questsSource?.items)
+    ? questsSource.items
+    : [];
+
+  // Hợp nhất Waystones & Bạn bè
+  const waystonesSource = extraWaystones || profile;
+  const waystonesList = Array.isArray(waystonesSource?.waystones)
+    ? waystonesSource.waystones
+    : Array.isArray(waystonesSource?.items)
+    ? waystonesSource.items
+    : [];
+
+  const friendsSource = extraFriends || profile;
+  const friendsList = Array.isArray(friendsSource?.friends)
+    ? friendsSource.friends
+    : Array.isArray(friendsSource?.items)
+    ? friendsSource.items
+    : [];
+
+  // Hợp nhất Hòm thưởng & Vé cược giấy phép
+  const rewardsList = Array.isArray(rewardsData?.rewards)
+    ? rewardsData.rewards
+    : Array.isArray(rewardsData?.items)
+    ? rewardsData.items
+    : Array.isArray(rewardsData)
+    ? rewardsData
+    : [];
 
   const betsList = Array.isArray(betsData?.items) ? betsData.items : [];
+
+  const charClassLabel = resolveStringLabel(
+    currentChar.className || currentChar.rpgClass || currentChar.class,
+    'ADVENTURER'
+  ).toUpperCase();
+  const charLevel = Number(currentChar.level ?? 1);
+  const charExp = Number(currentChar.exp ?? 0);
+  const charMaxExp = Math.max(1, Number(currentChar.maxExp ?? currentChar.nextLevelExp ?? 100));
+  const expPercent = Math.min(100, Math.max(0, Math.round((charExp / charMaxExp) * 100)));
 
   const tabs = [
     { id: 'INVENTORY', label: lang === 'vi' ? 'TÚI ĐỒ & TRANG BỊ' : 'INVENTORY & GEAR' },
@@ -443,33 +340,33 @@ export default function PlayerHubPage() {
   const mountColumns = [
     {
       key: 'name',
-      header: lang === 'vi' ? 'THÚ CƯỠI (BẤM ĐỂ MỞ TÚI YÊN)' : 'MOUNT (CLICK TO INSPECT)',
+      header: lang === 'vi' ? 'THÚ CƯỠI' : 'MOUNT',
       render: (row) => (
-        <button
-          type="button"
-          onClick={() => setSelectedMountSlot(row.slot)}
-          className="text-left font-mono text-xs hover:text-accent-emerald"
-        >
-          <div className="font-bold text-ink-primary">
-            #{row.slot} — {row.customName || row.type || 'MOUNT'}
-          </div>
-          {row.customName && row.type && (
-            <div className="text-[11px] text-ink-secondary">{row.type}</div>
-          )}
-        </button>
+        <div className="font-mono text-xs">
+          <div className="font-bold text-ink-primary">{row.name || row.displayName || row.id}</div>
+          {row.type && <div className="text-[11px] text-ink-secondary">{row.type}</div>}
+        </div>
       ),
     },
     {
-      key: 'tiers',
-      header: lang === 'vi' ? 'CHỈ SỐ NÂNG CẤP (TIER)' : 'UPGRADE TIERS',
-      render: (row) => {
-        const t = row.tiers || {};
-        return (
-          <span className="font-mono text-[11px] text-ink-secondary tabular-nums">
-            SPD:{t.speed ?? 0} | JMP:{t.jump ?? 0} | DUR:{t.durability ?? 0} | BAG:{t.storage ?? 0}
-          </span>
-        );
-      },
+      key: 'level',
+      header: lang === 'vi' ? 'CẤP / HẠNG' : 'LEVEL / TIER',
+      align: 'center',
+      render: (row) => (
+        <span className="font-mono text-xs font-bold text-accent-emerald tabular-nums">
+          LV.{row.level ?? 1} {row.tier ? `[T${row.tier}]` : ''}
+        </span>
+      ),
+    },
+    {
+      key: 'stats',
+      header: lang === 'vi' ? 'TỐC ĐỘ // THỂ LỰC' : 'SPEED // STAMINA',
+      align: 'right',
+      render: (row) => (
+        <span className="font-mono text-xs text-ink-secondary tabular-nums">
+          SPD: {row.speed ?? '—'} // STA: {row.stamina ?? '—'}
+        </span>
+      ),
     },
     {
       key: 'status',
@@ -477,8 +374,8 @@ export default function PlayerHubPage() {
       align: 'right',
       render: (row) => (
         <StatusTag
-          label={row.isDead ? (lang === 'vi' ? 'HỒI SINH' : 'INJURED') : 'READY'}
-          variant={row.isDead ? 'crimson' : 'emerald'}
+          label={row.isActive || row.summoned ? 'ACTIVE' : 'STABLED'}
+          variant={row.isActive || row.summoned ? 'emerald' : 'neutral'}
         />
       ),
     },
@@ -490,8 +387,14 @@ export default function PlayerHubPage() {
       header: lang === 'vi' ? 'NHIỆM VỤ' : 'QUEST',
       render: (row) => (
         <div>
-          <div className="font-mono text-[10px] font-bold text-ink-secondary">{row.category}</div>
-          <div className="font-semibold text-ink-primary">{row.title}</div>
+          <div className="font-semibold text-ink-primary">
+            {row.title || row.name || row.questId || row.id}
+          </div>
+          {row.objective && (
+            <div className="mt-0.5 font-mono text-[11px] text-ink-secondary">
+              {row.objective}
+            </div>
+          )}
         </div>
       ),
     },
@@ -500,19 +403,26 @@ export default function PlayerHubPage() {
       header: lang === 'vi' ? 'TIẾN ĐỘ' : 'PROGRESS',
       align: 'center',
       render: (row) => (
-        <span className="font-mono text-xs font-semibold tabular-nums">{row.progressText}</span>
+        <span className="font-mono text-xs font-semibold tabular-nums">
+          {row.progress !== undefined && row.target !== undefined
+            ? `${row.progress} / ${row.target}`
+            : row.progressText || '—'}
+        </span>
       ),
     },
     {
       key: 'status',
       header: lang === 'vi' ? 'TRẠNG THÁI' : 'STATUS',
       align: 'right',
-      render: (row) => (
-        <StatusTag
-          label={row.status}
-          variant={row.status === 'COMPLETED' ? 'emerald' : 'amber'}
-        />
-      ),
+      render: (row) => {
+        const st = String(row.status || 'ACTIVE').toUpperCase();
+        return (
+          <StatusTag
+            label={st}
+            variant={st === 'COMPLETED' || st === 'DONE' ? 'emerald' : 'amber'}
+          />
+        );
+      },
     },
   ];
 
@@ -522,30 +432,27 @@ export default function PlayerHubPage() {
       header: lang === 'vi' ? 'ĐIỂM DỊCH CHUYỂN' : 'WAYSTONE NAME',
       render: (row) => (
         <span className="font-mono text-xs font-bold text-ink-primary">
-          {resolveWaystoneName(row)}
+          {row.name || row.displayName || row.id}
         </span>
       ),
     },
     {
       key: 'world',
       header: lang === 'vi' ? 'THẾ GIỚI' : 'WORLD',
-      render: (row) => {
-        const coords = resolveWaystoneCoords(row);
-        return <span className="font-mono text-xs text-ink-secondary">{coords.world}</span>;
-      },
+      render: (row) => (
+        <span className="font-mono text-xs text-ink-secondary">{row.world || 'world'}</span>
+      ),
     },
     {
       key: 'coords',
       header: lang === 'vi' ? 'TỌA ĐỘ (X / Y / Z)' : 'COORDINATES (X / Y / Z)',
       align: 'right',
-      render: (row) => {
-        const c = resolveWaystoneCoords(row);
-        return (
-          <span className="font-mono text-xs font-semibold text-accent-emerald tabular-nums">
-            {c.x} / {c.y} / {c.z}
-          </span>
-        );
-      },
+      render: (row) => (
+        <span className="font-mono text-xs font-semibold text-accent-emerald tabular-nums">
+          {Math.round(Number(row.x ?? 0))} / {Math.round(Number(row.y ?? 0))} /{' '}
+          {Math.round(Number(row.z ?? 0))}
+        </span>
+      ),
     },
   ];
 
@@ -556,13 +463,14 @@ export default function PlayerHubPage() {
       render: (row) => <PlayerBadge player={row} />,
     },
     {
-      key: 'classLevel',
-      header: lang === 'vi' ? 'NHÂN VẬT' : 'CHARACTER',
+      key: 'status',
+      header: lang === 'vi' ? 'TRẠNG THÁI' : 'PRESENCE',
       align: 'right',
       render: (row) => (
-        <span className="font-mono text-xs text-ink-secondary tabular-nums">
-          {String(row.class || 'COMMONER').toUpperCase()} LV.{row.level ?? 1}
-        </span>
+        <StatusTag
+          label={row.online ? 'ONLINE' : 'OFFLINE'}
+          variant={row.online ? 'emerald' : 'neutral'}
+        />
       ),
     },
   ];
@@ -573,35 +481,26 @@ export default function PlayerHubPage() {
       header: lang === 'vi' ? 'PHẦN THƯỞNG' : 'REWARD',
       render: (row) => (
         <div className="font-mono text-xs">
-          <div className="text-[10px] font-bold text-ink-secondary">{row.type}</div>
-          <div className="font-bold text-ink-primary">{row.title}</div>
-          <div className="text-[11px] text-ink-secondary">{row.detail}</div>
+          <div className="font-bold text-ink-primary">
+            {row.title || row.displayName || row.name || row.id}
+          </div>
+          {row.source && <div className="text-[11px] text-ink-secondary">{row.source}</div>}
         </div>
       ),
-    },
-    {
-      key: 'coins',
-      header: lang === 'vi' ? 'TIỀN THƯỞNG' : 'COINS',
-      align: 'right',
-      render: (row) =>
-        row.coins ? (
-          <CurrencyDisplay currency={row.coins} compact />
-        ) : (
-          <span className="font-mono text-xs text-ink-secondary">—</span>
-        ),
     },
     {
       key: 'status',
       header: lang === 'vi' ? 'TRẠNG THÁI' : 'STATUS',
       align: 'right',
-      render: (row) => (
-        <StatusTag
-          label={row.status}
-          variant={
-            row.status === 'UNCLAIMED' || row.status === 'AVAILABLE' ? 'emerald' : 'neutral'
-          }
-        />
-      ),
+      render: (row) => {
+        const claimed = Boolean(row.claimed || row.isClaimed);
+        return (
+          <StatusTag
+            label={claimed ? (lang === 'vi' ? 'ĐÃ NHẬN' : 'CLAIMED') : (lang === 'vi' ? 'CHỜ NHẬN' : 'UNCLAIMED')}
+            variant={claimed ? 'neutral' : 'emerald'}
+          />
+        );
+      },
     },
   ];
 
@@ -694,10 +593,10 @@ export default function PlayerHubPage() {
       <div className="grid grid-cols-2 border border-border-strong bg-surface md:grid-cols-4">
         <div className="border-r border-b border-border-subtle p-3.5 md:border-b-0">
           <div className="font-mono text-[11px] uppercase text-ink-secondary">
-            {lang === 'vi' ? 'NGÂN KHỐ SLOT HIỆN TẠI' : 'SLOT WALLET BALANCE'}
+            {lang === 'vi' ? 'NGÂN KHỐ CÁ NHÂN' : 'WALLET BALANCE'}
           </div>
           <div className="mt-1">
-            <CurrencyDisplay currency={profile.currency || 0} />
+            <CurrencyDisplay currency={currencyData} />
           </div>
         </div>
 
@@ -706,12 +605,12 @@ export default function PlayerHubPage() {
             {lang === 'vi' ? 'BANG HỘI HIỆN TẠI' : 'GUILD AFFILIATION'}
           </div>
           <div className="mt-1 font-mono text-xs font-bold">
-            {profile.guild ? (
+            {guildInfo ? (
               <Link
                 to="/guilds/me"
                 className="text-accent-emerald underline underline-offset-2"
               >
-                {profile.guild.name} [{profile.guild.role || 'MEMBER'}]
+                {guildInfo.name} [{guildInfo.role || 'MEMBER'}]
               </Link>
             ) : (
               <span className="text-ink-secondary">
@@ -743,11 +642,10 @@ export default function PlayerHubPage() {
 
         <div className="p-3.5">
           <div className="font-mono text-[11px] uppercase text-ink-secondary">
-            {lang === 'vi' ? 'NGUYÊN TỐ // NĂNG LƯỢNG' : 'ELEMENTS // RESOURCE'}
+            {lang === 'vi' ? 'CẬP NHẬT LẦN CUỐI' : 'LAST SYNC'}
           </div>
-          <div className="mt-1 font-mono text-xs font-bold text-ink-primary tabular-nums">
-            RES: {charResource}
-            {elementsList.length > 0 ? ` // ${elementsList.join(', ').toUpperCase()}` : ''}
+          <div className="mt-1 font-mono text-xs text-ink-primary tabular-nums">
+            {formatDateTime(profile.lastSeen || profile.updatedAt, lang)}
           </div>
         </div>
       </div>
@@ -760,15 +658,19 @@ export default function PlayerHubPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
-            {slotsList.map((s) => {
-              const isSelected = Number(s.slot) === Number(activeSlotNumber);
-              const slotClass = resolveStringLabel(s.class, 'CHAR').toUpperCase();
+            {characters.map((char, idx) => {
+              const slotNum = char.slot ?? idx + 1;
+              const isSelected = idx === safeCharIndex;
+              const slotClass = resolveStringLabel(
+                char.className || char.rpgClass || char.class,
+                'CHAR'
+              ).toUpperCase();
               return (
                 <button
-                  key={s.slot}
+                  key={char.id || slotNum}
                   type="button"
                   onClick={() => {
-                    setRequestedSlot(Number(s.slot));
+                    setSelectedSlotIdx(idx);
                     setInspectedItem(null);
                   }}
                   className={`border border-border-strong px-2.5 py-1 font-semibold tabular-nums ${
@@ -777,41 +679,32 @@ export default function PlayerHubPage() {
                       : 'bg-canvas text-ink-primary hover:bg-subheader'
                   }`}
                 >
-                  SLOT #{s.slot} ({slotClass} LV.{s.level ?? 1})
+                  SLOT #{slotNum} ({slotClass} LV.{char.level ?? 1})
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* EXP Progress Bar (RPGPlayer.getRequiredExp mirror) & Attributes */}
+        {/* EXP Bar & Attributes */}
         <div className="mt-3 grid gap-4 md:grid-cols-12">
           <div className="space-y-1.5 md:col-span-5">
-            <div className="border border-border-subtle bg-canvas p-3 font-mono text-xs tabular-nums">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-ink-primary">
-                  {charClassLabel} — LEVEL {charLevel}
-                </span>
-                <span className="font-bold text-accent-emerald">{charExpPercent}%</span>
-              </div>
-
-              <div className="mt-1.5 border border-border-strong bg-surface p-0.5">
-                <div
-                  style={{ width: `${charExpPercent}%` }}
-                  className="h-2 bg-accent-emerald"
-                />
-              </div>
-
-              <div className="mt-1.5 text-[11px] text-ink-secondary">
-                EXP: <strong className="text-ink-primary">{formatExpNumber(charExp)}</strong> /{' '}
-                {formatExpNumber(charRequiredExp)}
-              </div>
+            <div className="flex items-center justify-between font-mono text-xs tabular-nums">
+              <span className="font-bold text-ink-primary">
+                {charClassLabel} — LEVEL {charLevel}
+              </span>
+              <span className="text-ink-secondary">
+                EXP: {charExp.toLocaleString()} / {charMaxExp.toLocaleString()} ({expPercent}%)
+              </span>
+            </div>
+            <div className="border border-border-strong bg-canvas p-0.5">
+              <div style={{ width: `${expPercent}%` }} className="h-2 bg-accent-emerald" />
             </div>
           </div>
 
           <div className="md:col-span-7">
             {statEntries.length > 0 ? (
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {statEntries.map(([statKey, statVal]) => (
                   <div
                     key={statKey}
@@ -858,34 +751,40 @@ export default function PlayerHubPage() {
             </div>
           ) : (
             <div className="grid gap-4 lg:grid-cols-12">
-              {/* Equipped Armor, Offhand & Trinkets */}
+              {/* Equipment & Inspector */}
               <div className="space-y-4 border border-border-strong bg-surface p-4 lg:col-span-5">
                 <div className="border-b border-border-subtle pb-2 font-mono text-xs font-bold uppercase text-ink-primary">
-                  [EQUIPPED GEAR // {lang === 'vi' ? 'TRANG BỊ & PHỤ KIỆN' : 'ARMOR & TRINKETS'}]
+                  [EQUIPPED GEAR // {lang === 'vi' ? 'TRANG BỊ ĐANG MẶC' : 'ACTIVE LOADOUT'}]
                 </div>
 
-                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-                  {[...equippedArmorEntries, ...equippedTrinketEntries].map((eq) => (
-                    <div
-                      key={eq.key}
-                      className="flex items-center gap-2.5 border border-border-subtle bg-canvas p-2"
-                    >
-                      <ItemSlotCell
-                        item={eq.item}
-                        size="md"
-                        onClick={(it) => setInspectedItem(it)}
-                      />
-                      <div className="min-w-0">
-                        <div className="font-mono text-[10px] font-bold text-ink-secondary">
-                          {eq.label}
-                        </div>
-                        <div className="truncate text-xs font-semibold text-ink-primary">
-                          {eq.item?.displayName || eq.item?.type || '—'}
+                {equipmentEntries.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                    {equipmentEntries.map((eq) => (
+                      <div
+                        key={eq.key}
+                        className="flex items-center gap-2.5 border border-border-subtle bg-canvas p-2"
+                      >
+                        <ItemSlotCell
+                          item={eq.item}
+                          size="md"
+                          onClick={(it) => setInspectedItem(it)}
+                        />
+                        <div className="min-w-0">
+                          <div className="font-mono text-[10px] font-bold text-ink-secondary">
+                            {eq.label}
+                          </div>
+                          <div className="truncate text-xs font-semibold text-ink-primary">
+                            {eq.item?.displayName || eq.item?.type || '—'}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="border border-border-subtle bg-canvas p-4 font-mono text-xs text-ink-secondary">
+                    [{lang === 'vi' ? 'CHƯA TRANG BỊ VẬT PHẨM' : 'NO EQUIPPED ITEMS'}]
+                  </div>
+                )}
 
                 {/* Item Lore Inspector */}
                 {inspectedItem && (
@@ -914,7 +813,7 @@ export default function PlayerHubPage() {
                 )}
               </div>
 
-              {/* Vanilla Main Inventory + Hotbar + EnderChest + Backpacks */}
+              {/* Player Inventory + Hotbar + EnderChest */}
               <div className="space-y-4 border border-border-strong bg-surface p-4 lg:col-span-7">
                 <div className="border-b border-border-subtle pb-2 font-mono text-xs font-bold uppercase text-ink-primary">
                   [BACKPACK &amp; HOTBAR // {lang === 'vi' ? 'TÚI ĐỒ CÁ NHÂN' : 'PLAYER STORAGE'}]
@@ -923,14 +822,14 @@ export default function PlayerHubPage() {
                 <div className="space-y-2 overflow-x-auto">
                   <ChestGrid
                     title={lang === 'vi' ? 'TÚI ĐỒ CHÍNH (27 Ô)' : 'MAIN INVENTORY (27 SLOTS)'}
-                    items={vanillaInventory}
+                    items={inventoryItems}
                     slotIndices={MAIN_INVENTORY_SLOTS}
                     mode="slot"
                     onSelectItem={(it) => setInspectedItem(it)}
                   />
                   <ChestGrid
                     title={lang === 'vi' ? 'THANH PHÍM TẮT (9 Ô)' : 'HOTBAR (9 SLOTS)'}
-                    items={vanillaInventory}
+                    items={inventoryItems}
                     slotIndices={HOTBAR_SLOTS}
                     mode="slot"
                     onSelectItem={(it) => setInspectedItem(it)}
@@ -946,25 +845,6 @@ export default function PlayerHubPage() {
                       mode="slot"
                       onSelectItem={(it) => setInspectedItem(it)}
                     />
-                  </div>
-                )}
-
-                {backpacksList.length > 0 && (
-                  <div className="space-y-3 border-t border-border-subtle pt-3">
-                    <div className="font-mono text-xs font-bold uppercase text-ink-secondary">
-                      [BACKPACKS // {lang === 'vi' ? 'BA LÔ MANG THEO' : 'NESTED BACKPACKS'}]
-                    </div>
-                    {backpacksList.map((bag) => (
-                      <div key={bag.bagUuid} className="overflow-x-auto">
-                        <ChestGrid
-                          title={`${bag.bagName} (${bag.parentLocation} #${bag.locatedAtSlot})`}
-                          items={bag.items || []}
-                          totalSlots={Math.max(9, Number(bag.capacity || bag.items?.length || 27))}
-                          mode="slot"
-                          onSelectItem={(it) => setInspectedItem(it)}
-                        />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
@@ -985,12 +865,11 @@ export default function PlayerHubPage() {
               <div className="space-y-3">
                 <div className="border border-border-subtle bg-canvas p-3 font-mono text-xs">
                   <div className="font-bold text-ink-primary">
-                    SLOT #{activeMount.slot} — {activeMount.customName || activeMount.type}
+                    {activeMount.name || activeMount.displayName || activeMount.id}
                   </div>
                   <div className="mt-1 text-ink-secondary tabular-nums">
-                    SPD T{activeMount.tiers?.speed ?? 0} // JMP T{activeMount.tiers?.jump ?? 0} //
-                    DUR T{activeMount.tiers?.durability ?? 0} // BAG T
-                    {activeMount.tiers?.storage ?? 0}
+                    LV.{activeMount.level ?? 1} // SPD: {activeMount.speed ?? '—'} // STA:{' '}
+                    {activeMount.stamina ?? '—'}
                   </div>
                 </div>
 
@@ -998,7 +877,7 @@ export default function PlayerHubPage() {
                   <ChestGrid
                     title={lang === 'vi' ? 'TÚI YÊN NGỰA' : 'SADDLEBAG'}
                     items={saddlebagItems}
-                    totalSlots={saddlebagCapacity}
+                    totalSlots={Math.max(27, saddlebagItems.length)}
                     mode="slot"
                   />
                 </div>
@@ -1017,7 +896,7 @@ export default function PlayerHubPage() {
             <DataTable
               columns={mountColumns}
               rows={mountsList}
-              rowKey={(row) => row.slot}
+              rowKey={(row, idx) => row.id || idx}
               loading={mountsLoading}
             />
           </div>
@@ -1028,15 +907,8 @@ export default function PlayerHubPage() {
       {activeTab === 'PROGRESSION' && (
         <div className="grid gap-4 lg:grid-cols-12">
           <div className="space-y-3 border border-border-strong bg-surface p-4 lg:col-span-5">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle pb-2 font-mono text-xs">
-              <span className="font-bold uppercase text-ink-primary">
-                [JOBS // {lang === 'vi' ? 'KỸ NĂNG NGHỀ NGHIỆP' : 'LIFE SKILLS'}]
-              </span>
-              {jobsData && (
-                <span className="text-[11px] text-ink-secondary tabular-nums">
-                  SCRAPS: <strong>{Number(jobsData.scraps || 0).toLocaleString()}</strong>
-                </span>
-              )}
+            <div className="border-b border-border-subtle pb-2 font-mono text-xs font-bold uppercase text-ink-primary">
+              [JOBS // {lang === 'vi' ? 'KỸ NĂNG NGHỀ NGHIỆP' : 'LIFE SKILLS'}]
             </div>
 
             {jobsLoading ? (
@@ -1045,38 +917,32 @@ export default function PlayerHubPage() {
               </div>
             ) : professionsList.length > 0 ? (
               <div className="space-y-2.5">
-                {professionsList.map((prof) => (
-                  <div
-                    key={prof.id}
-                    className="border border-border-subtle bg-canvas p-3 font-mono text-xs tabular-nums"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-ink-primary">{prof.name}</span>
-                        {prof.isCurrent && <StatusTag label="ACTIVE" variant="emerald" />}
+                {professionsList.map((prof, idx) => {
+                  const pExp = Number(prof.exp ?? 0);
+                  const pMax = Math.max(1, Number(prof.maxExp ?? prof.nextLevelExp ?? 100));
+                  const pct = Math.min(100, Math.max(0, Math.round((pExp / pMax) * 100)));
+                  return (
+                    <div
+                      key={prof.id || idx}
+                      className="border border-border-subtle bg-canvas p-2.5 font-mono text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-ink-primary">
+                          {prof.displayName || prof.name || prof.id}
+                        </span>
+                        <span className="font-bold text-accent-emerald tabular-nums">
+                          LV.{prof.level ?? 1}
+                        </span>
                       </div>
-                      <span className="font-bold text-accent-emerald">LV.{prof.level}</span>
+                      <div className="mt-1.5 border border-border-strong bg-surface p-0.5">
+                        <div style={{ width: `${pct}%` }} className="h-1.5 bg-accent-emerald" />
+                      </div>
+                      <div className="mt-1 text-right text-[10px] text-ink-secondary tabular-nums">
+                        {pExp.toLocaleString()} / {pMax.toLocaleString()} EXP ({pct}%)
+                      </div>
                     </div>
-
-                    <div className="mt-1.5 border border-border-strong bg-surface p-0.5">
-                      <div
-                        style={{ width: `${prof.progressPercent}%` }}
-                        className="h-1.5 bg-accent-emerald"
-                      />
-                    </div>
-
-                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-ink-secondary">
-                      <span>
-                        {formatExpNumber(prof.exp)} / {formatExpNumber(prof.requiredExp)} EXP (
-                        {prof.progressPercent}%)
-                      </span>
-                      <span>
-                        JP: <strong className="text-ink-primary">{prof.points}</strong> (
-                        {prof.unlockedSkillsCount} {lang === 'vi' ? 'kỹ năng' : 'skills'})
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="border border-border-subtle bg-canvas p-6 text-center font-mono text-xs text-ink-secondary">
@@ -1086,21 +952,13 @@ export default function PlayerHubPage() {
           </div>
 
           <div className="space-y-3 lg:col-span-7">
-            <div className="flex flex-wrap items-center justify-between gap-2 border border-border-strong bg-surface px-4 py-2.5 font-mono text-xs">
-              <span className="font-bold uppercase text-ink-primary">
-                [QUEST LOG // {lang === 'vi' ? 'NHẬT KÝ NHIỆM VỤ' : 'QUEST TRACKER'}]
-              </span>
-              {questsData && (
-                <span className="text-[11px] text-ink-secondary tabular-nums">
-                  DAILY: {questsData.daily?.completed ?? 0} // WEEKLY PTS:{' '}
-                  {questsData.weekly?.points ?? 0}
-                </span>
-              )}
+            <div className="border border-border-strong bg-surface px-4 py-2.5 font-mono text-xs font-bold uppercase text-ink-primary">
+              [QUEST LOG // {lang === 'vi' ? 'NHẬT KÝ NHIỆM VỤ' : 'QUEST TRACKER'}]
             </div>
             <DataTable
               columns={questColumns}
-              rows={questRows}
-              rowKey="id"
+              rows={questsList}
+              rowKey={(row, idx) => row.id || row.questId || idx}
               loading={questsLoading}
             />
           </div>
@@ -1117,32 +975,18 @@ export default function PlayerHubPage() {
             <DataTable
               columns={waystoneColumns}
               rows={waystonesList}
-              rowKey={(row, idx) => row.id || row._id || idx}
-              loading={waystonesLoading}
+              rowKey={(row, idx) => row.id || row.name || idx}
             />
           </div>
 
           <div className="space-y-3 lg:col-span-5">
-            <div className="flex items-center justify-between border border-border-strong bg-surface px-4 py-2.5 font-mono text-xs">
-              <span className="font-bold uppercase text-ink-primary">
-                [FRIENDS // {lang === 'vi' ? 'DANH SÁCH BẠN BÈ' : 'FRIENDS ROSTER'}]
-              </span>
-              {pendingFriendsCount > 0 && (
-                <StatusTag
-                  label={
-                    lang === 'vi'
-                      ? `${pendingFriendsCount} LỜI MỜI`
-                      : `${pendingFriendsCount} PENDING`
-                  }
-                  variant="amber"
-                />
-              )}
+            <div className="border border-border-strong bg-surface px-4 py-2.5 font-mono text-xs font-bold uppercase text-ink-primary">
+              [FRIENDS // {lang === 'vi' ? 'DANH SÁCH BẠN BÈ' : 'FRIENDS ROSTER'}]
             </div>
             <DataTable
               columns={friendColumns}
               rows={friendsList}
-              rowKey={(row) => row.uuid || row.username}
-              loading={friendsLoading}
+              rowKey={(row, idx) => row.uuid || row.username || idx}
             />
           </div>
         </div>
@@ -1152,21 +996,13 @@ export default function PlayerHubPage() {
       {activeTab === 'REWARDS_BETS' && (
         <div className="grid gap-4 lg:grid-cols-12">
           <div className="space-y-3 lg:col-span-5">
-            <div className="flex flex-wrap items-center justify-between gap-2 border border-border-strong bg-surface px-4 py-2.5 font-mono text-xs">
-              <span className="font-bold uppercase text-ink-primary">
-                [REWARDS // {lang === 'vi' ? 'HÒM THƯỞNG & ĐIỂM DANH' : 'REWARDS & CHECK-IN'}]
-              </span>
-              {rewardsData?.monthlyCheckIn && (
-                <span className="text-[11px] font-bold text-accent-emerald tabular-nums">
-                  CHECK-IN: {rewardsData.monthlyCheckIn.currentProgress}/
-                  {rewardsData.monthlyCheckIn.maxDays}
-                </span>
-              )}
+            <div className="border border-border-strong bg-surface px-4 py-2.5 font-mono text-xs font-bold uppercase text-ink-primary">
+              [REWARDS // {lang === 'vi' ? 'HÒM THƯỞNG CÁ NHÂN' : 'PLAYER REWARDS'}]
             </div>
             <DataTable
               columns={rewardColumns}
-              rows={rewardRows}
-              rowKey="id"
+              rows={rewardsList}
+              rowKey={(row, idx) => row.id || idx}
               loading={rewardsLoading}
             />
           </div>
