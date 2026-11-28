@@ -9,7 +9,9 @@ import GuildDirectoryPage from '../pages/guild/GuildDirectoryPage';
 import GuildDetailPage from '../pages/guild/GuildDetailPage';
 import PlayerHubPage from '../pages/player/PlayerHubPage';
 import PublicProfilePage from '../pages/player/PublicProfilePage';
-import OperatorAuditPage from '../pages/operator/OperatorAuditPage';
+import OperatorOverviewPage from '../pages/operator/OperatorOverviewPage';
+import EconomyPage from '../pages/operator/EconomyPage';
+import PlayerInspectPage from '../pages/operator/PlayerInspectPage';
 
 const router = createBrowserRouter([
   {
@@ -54,7 +56,31 @@ const router = createBrowserRouter([
         path: 'operator',
         element: (
           <ProtectedRoute minRole="MODERATOR">
-            <OperatorAuditPage />
+            <OperatorOverviewPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'operator/economy',
+        element: (
+          <ProtectedRoute minRole="MODERATOR">
+            <EconomyPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'operator/inspect',
+        element: (
+          <ProtectedRoute minRole="MODERATOR">
+            <PlayerInspectPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'operator/players/:username',
+        element: (
+          <ProtectedRoute minRole="MODERATOR">
+            <PlayerInspectPage />
           </ProtectedRoute>
         ),
       },
