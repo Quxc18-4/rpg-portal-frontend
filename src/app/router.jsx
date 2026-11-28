@@ -10,7 +10,7 @@ import GuildDetailPage from '../pages/guild/GuildDetailPage';
 import PlayerHubPage from '../pages/player/PlayerHubPage';
 import PublicProfilePage from '../pages/player/PublicProfilePage';
 import OperatorOverviewPage from '../pages/operator/OperatorOverviewPage';
-import EconomyPage from '../pages/operator/EconomyPage';
+import EconomyAuditPage from '../pages/operator/EconomyAuditPage';
 import PlayerInspectPage from '../pages/operator/PlayerInspectPage';
 
 const router = createBrowserRouter([
@@ -64,7 +64,7 @@ const router = createBrowserRouter([
         path: 'operator/economy',
         element: (
           <ProtectedRoute minRole="MODERATOR">
-            <EconomyPage />
+            <EconomyAuditPage />
           </ProtectedRoute>
         ),
       },

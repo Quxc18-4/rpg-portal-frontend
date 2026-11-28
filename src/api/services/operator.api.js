@@ -1,4 +1,5 @@
-import axiosClient from '../axiosClient';
+// Ví dụ nếu nằm ở src/api/client/axiosClient.js hoặc src/api/http/axiosClient.js:
+import axiosClient from '../client/axiosClient';
 
 export const operatorApi = {
   // Tổng quan kinh tế & hệ thống

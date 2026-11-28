@@ -11,7 +11,7 @@ import StatusTag from '../../components/ui/StatusTag';
 import OperatorOverviewKpi from './components/OperatorOverviewKpi';
 import OperatorTransactionsTab from './components/OperatorTransactionsTab';
 
-export default function EconomyPage() {
+export default function EconomyAuditPage() {
   const { lang } = useLanguage();
   const navigate = useNavigate();
   const [subTab, setSubTab] = useState('TRANSACTIONS');
