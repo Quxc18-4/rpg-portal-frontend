@@ -4,12 +4,17 @@ import { guildApi } from '../../api/services/guild.api';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useLanguage } from '../../hooks/useLanguage';
-import { formatDateTime } from '../../utils/date.util';
 import ChestGrid from '../../components/rpg/ChestGrid';
 import CurrencyDisplay from '../../components/rpg/CurrencyDisplay';
 import PlayerBadge from '../../components/rpg/PlayerBadge';
 import DataTable from '../../components/ui/DataTable';
 import StatusTag from '../../components/ui/StatusTag';
+
+// 52 slot hợp lệ của rương đôi Minecraft 54 ô (loại bỏ slot 45 và 53 là nút chuyển trang GUI)
+const GUILD_VAULT_SLOT_INDICES = [
+  ...Array.from({ length: 45 }, (_, i) => i),
+  ...Array.from({ length: 7 }, (_, i) => 46 + i),
+];
 
 export default function GuildDetailPage({ isMe = false }) {
   const { id } = useParams();
@@ -34,10 +39,8 @@ export default function GuildDetailPage({ isMe = false }) {
     error: vaultError,
   } = useAsyncData(
     () => {
-      const query = {
-        page: vaultPage,
-        q: debouncedVaultQuery || undefined,
-      };
+      const trimmedQ = debouncedVaultQuery.trim();
+      const query = trimmedQ ? { pages: 'all', q: trimmedQ } : { page: vaultPage };
       return isMe ? guildApi.getMyGuildVault(query) : guildApi.getGuildVault(id, query);
     },
     [isMe, id, vaultPage, debouncedVaultQuery]
@@ -68,10 +71,31 @@ export default function GuildDetailPage({ isMe = false }) {
   }
 
   const members = Array.isArray(guild.members) ? guild.members : [];
-  const unlockedPages = Number(
-    vaultData?.unlockedPages || guild.vaultSummary?.unlockedPages || 1
+  const leaderEntity =
+    members.find((m) => String(m.guildRole).toUpperCase() === 'LEADER') || null;
+
+  const totalVaultPages = Math.max(
+    1,
+    Number(
+      vaultData?.vaultSummary?.totalPages ??
+        guild.vaultSummary?.totalPages ??
+        guild.vaultPagesCount ??
+        1
+    ) || 1
   );
-  const vaultItems = Array.isArray(vaultData?.items) ? vaultData.items : [];
+
+  const pagesOverview =
+    vaultData?.vaultSummary?.pagesOverview || guild.vaultSummary?.pagesOverview || [];
+
+  const isSearchMode = vaultData?.mode === 'SEARCH';
+  const currentVaultPageObj = !isSearchMode
+    ? (vaultData?.vaults || []).find((v) => Number(v.page) === vaultPage) ||
+      vaultData?.vaults?.[0]
+    : null;
+
+  const vaultItems = isSearchMode
+    ? vaultData?.items || []
+    : currentVaultPageObj?.items || [];
 
   const memberColumns = [
     {
@@ -80,27 +104,24 @@ export default function GuildDetailPage({ isMe = false }) {
       render: (row) => <PlayerBadge player={row} />,
     },
     {
-      key: 'rank',
-      header: lang === 'vi' ? 'CHỨC VỤ' : 'RANK',
+      key: 'guildRole',
+      header: lang === 'vi' ? 'CHỨC VỤ' : 'GUILD ROLE',
+      align: 'right',
       render: (row) => {
-        const rank = String(row.rank || row.role || 'MEMBER').toUpperCase();
+        const role = String(row.guildRole || 'MEMBER').toUpperCase();
         return (
           <StatusTag
-            label={rank}
-            variant={rank === 'LEADER' ? 'emerald' : rank === 'OFFICER' ? 'amber' : 'neutral'}
+            label={role}
+            variant={
+              role === 'LEADER'
+                ? 'emerald'
+                : role === 'VICE_LEADER'
+                ? 'amber'
+                : 'neutral'
+            }
           />
         );
       },
-    },
-    {
-      key: 'joinedAt',
-      header: lang === 'vi' ? 'NGÀY GIA NHẬP' : 'JOINED AT',
-      align: 'right',
-      render: (row) => (
-        <span className="font-mono text-xs text-ink-secondary tabular-nums">
-          {formatDateTime(row.joinedAt, lang)}
-        </span>
-      ),
     },
   ];
 
@@ -109,18 +130,19 @@ export default function GuildDetailPage({ isMe = false }) {
       {/* Guild Header */}
       <div className="flex flex-wrap items-start justify-between gap-4 border border-border-strong bg-surface p-4">
         <div>
-          <div className="flex items-center gap-2">
-            {guild.tag && (
-              <span className="border border-border-strong bg-ink-primary px-2 py-0.5 font-mono text-xs font-bold text-white">
-                [{guild.tag}]
-              </span>
-            )}
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-bold text-ink-primary">{guild.name}</h1>
             <StatusTag label={`LV.${guild.level ?? 1}`} variant="emerald" />
+            {guild.hasIsland && (
+              <StatusTag
+                label={lang === 'vi' ? `ĐẢO BANG #${guild.islandId}` : `ISLAND #${guild.islandId}`}
+                variant="neutral"
+              />
+            )}
           </div>
-          {guild.description && (
-            <p className="mt-2 text-xs text-ink-secondary">{guild.description}</p>
-          )}
+          <div className="mt-1 font-mono text-xs text-ink-secondary tabular-nums">
+            EXP: {Number(guild.exp || 0).toLocaleString()}
+          </div>
         </div>
 
         <Link
@@ -138,7 +160,7 @@ export default function GuildDetailPage({ isMe = false }) {
             {lang === 'vi' ? 'BANG CHỦ' : 'LEADER'}
           </div>
           <div className="mt-1">
-            <PlayerBadge player={guild.leader} />
+            <PlayerBadge player={leaderEntity} />
           </div>
         </div>
 
@@ -147,8 +169,7 @@ export default function GuildDetailPage({ isMe = false }) {
             {lang === 'vi' ? 'QUÂN SỐ' : 'ROSTER'}
           </div>
           <div className="mt-1 font-mono text-sm font-bold text-ink-primary tabular-nums">
-            {members.length}
-            {guild.maxMembers ? ` / ${guild.maxMembers}` : ''}
+            {guild.memberCount ?? members.length} / {guild.maxMembers ?? 20}
           </div>
         </div>
 
@@ -157,7 +178,13 @@ export default function GuildDetailPage({ isMe = false }) {
             {lang === 'vi' ? 'NGÂN KHỐ BANG' : 'BANK BALANCE'}
           </div>
           <div className="mt-1">
-            <CurrencyDisplay currency={guild.bankBalance} />
+            {guild.accessLevel === 'PUBLIC' ? (
+              <span className="font-mono text-xs text-ink-secondary">
+                [{lang === 'vi' ? 'NỘI BỘ BANG' : 'MEMBERS ONLY'}]
+              </span>
+            ) : (
+              <CurrencyDisplay currency={guild.bankBalance} />
+            )}
           </div>
         </div>
 
@@ -166,14 +193,13 @@ export default function GuildDetailPage({ isMe = false }) {
             {lang === 'vi' ? 'KHO BANG MỞ KHÓA' : 'UNLOCKED VAULT'}
           </div>
           <div className="mt-1 font-mono text-sm font-bold text-accent-emerald tabular-nums">
-            {unlockedPages} {lang === 'vi' ? 'TRANG (52 Ô/TRANG)' : 'PAGES (52 SLOTS/PG)'}
+            {totalVaultPages} {lang === 'vi' ? 'TRANG (52 Ô/TRANG)' : 'PAGES (52 SLOTS/PG)'}
           </div>
         </div>
       </div>
 
       {/* Vault & Roster Split */}
       <div className="grid gap-4 lg:grid-cols-12">
-        {/* Guild Vault Chest */}
         <div className="space-y-3 border border-border-strong bg-surface p-4 lg:col-span-7">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle pb-2.5">
             <div className="font-mono text-xs font-bold uppercase text-ink-primary">
@@ -183,29 +209,37 @@ export default function GuildDetailPage({ isMe = false }) {
             <input
               type="text"
               value={vaultQuery}
-              onChange={(e) => setVaultQuery(e.target.value)}
+              onChange={(e) => {
+                setVaultQuery(e.target.value);
+                setVaultPage(1);
+              }}
               placeholder={lang === 'vi' ? 'Lọc vật phẩm trong rương...' : 'Filter vault items...'}
               className="border border-border-strong bg-canvas px-2.5 py-1 font-mono text-xs text-ink-primary outline-none"
             />
           </div>
 
-          {/* Vault Page Selector */}
-          <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
-            {Array.from({ length: Math.max(1, unlockedPages) }, (_, i) => i + 1).map((pg) => (
-              <button
-                key={pg}
-                type="button"
-                onClick={() => setVaultPage(pg)}
-                className={`border border-border-strong px-2.5 py-1 font-semibold tabular-nums ${
-                  vaultPage === pg
-                    ? 'bg-ink-primary text-white'
-                    : 'bg-canvas text-ink-primary hover:bg-subheader'
-                }`}
-              >
-                {lang === 'vi' ? `TRANG ${pg}` : `PAGE ${pg}`}
-              </button>
-            ))}
-          </div>
+          {!debouncedVaultQuery.trim() && (
+            <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
+              {Array.from({ length: totalVaultPages }, (_, i) => i + 1).map((pg) => {
+                const overview = pagesOverview.find((o) => Number(o.page) === pg);
+                const countBadge = overview ? ` (${overview.usedSlots}/${overview.capacity})` : '';
+                return (
+                  <button
+                    key={pg}
+                    type="button"
+                    onClick={() => setVaultPage(pg)}
+                    className={`border border-border-strong px-2.5 py-1 font-semibold tabular-nums ${
+                      vaultPage === pg
+                        ? 'bg-ink-primary text-white'
+                        : 'bg-canvas text-ink-primary hover:bg-subheader'
+                    }`}
+                  >
+                    {lang === 'vi' ? `TRANG ${pg}${countBadge}` : `PAGE ${pg}${countBadge}`}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {vaultError ? (
             <div className="border border-accent-crimson bg-canvas p-4 font-mono text-xs text-accent-crimson">
@@ -218,16 +252,20 @@ export default function GuildDetailPage({ isMe = false }) {
           ) : (
             <div className="overflow-x-auto">
               <ChestGrid
-                title={`VAULT PAGE #${vaultPage}`}
+                title={
+                  isSearchMode
+                    ? `${lang === 'vi' ? 'KẾT QUẢ TÌM KIẾM' : 'SEARCH RESULT'}`
+                    : `VAULT PAGE #${vaultPage}`
+                }
                 items={vaultItems}
-                totalSlots={52}
-                mode="sequential"
+                totalSlots={isSearchMode ? Math.max(52, vaultItems.length) : 52}
+                slotIndices={isSearchMode ? null : GUILD_VAULT_SLOT_INDICES}
+                mode={isSearchMode ? 'sequential' : 'slot'}
               />
             </div>
           )}
         </div>
 
-        {/* Guild Members Table */}
         <div className="space-y-3 lg:col-span-5">
           <div className="border border-border-strong bg-surface px-4 py-2.5 font-mono text-xs font-bold uppercase text-ink-primary">
             [ROSTER // {lang === 'vi' ? 'DANH SÁCH THÀNH VIÊN' : 'GUILD MEMBERS'}]

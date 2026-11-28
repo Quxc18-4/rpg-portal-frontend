@@ -1,6 +1,36 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  /* Khóa radius về 0px */
+  --radius-*: initial;
+  --radius-none: 0px;
+
+  /* Font chữ */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Bảng màu phẳng Tactical RPG Ledger */
+  --color-canvas: #F4F3EF;
+  --color-surface: #FFFFFF;
+  --color-subheader: #EAE7DF;
+
+  --color-ink-primary: #141416;
+  --color-ink-secondary: #52525B;
+
+  --color-border-strong: #18181B;
+  --color-border-subtle: #D6D3CD;
+
+  --color-accent-emerald: #0F766E;
+  --color-accent-amber: #B45309;
+  --color-accent-crimson: #B91C1C;
+
+  /* Bảng màu Minecraft Native UI */
+  --color-mc-slot: #8B8B8B;
+  --color-mc-slot-dark: #373737;
+  --color-mc-slot-light: #FFFFFF;
+  --color-mc-tooltip-bg: #100010;
+  --color-mc-tooltip-border: #2A0066;
+}
 
 @layer base {
   *,
@@ -13,7 +43,7 @@
   body {
     background-color: #F4F3EF;
     color: #141416;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--font-sans);
   }
 
   .tabular-nums {

@@ -5,6 +5,7 @@ export default function ChestGrid({
   title,
   items = [],
   totalSlots = 27,
+  slotIndices = null,
   mode = 'slot',
   selectedSlot = null,
   onSelectItem,
@@ -12,9 +13,11 @@ export default function ChestGrid({
 }) {
   const { lang } = useLanguage();
 
+  const effectiveTotal = Array.isArray(slotIndices) ? slotIndices.length : totalSlots;
+
   const slots = (() => {
     if (mode === 'sequential') {
-      const count = Math.max(totalSlots, items.length);
+      const count = Math.max(effectiveTotal, items.length);
       return Array.from({ length: count }, (_, idx) => ({
         index: idx,
         item: items[idx] || null,
@@ -28,9 +31,13 @@ export default function ChestGrid({
       }
     }
 
-    return Array.from({ length: totalSlots }, (_, idx) => ({
-      index: idx,
-      item: slotMap.get(idx) || null,
+    const indices = Array.isArray(slotIndices)
+      ? slotIndices
+      : Array.from({ length: totalSlots }, (_, idx) => idx);
+
+    return indices.map((slotIdx) => ({
+      index: slotIdx,
+      item: slotMap.get(slotIdx) || null,
     }));
   })();
 
@@ -40,7 +47,7 @@ export default function ChestGrid({
         <div className="mb-2 flex items-center justify-between font-mono text-xs font-bold text-[#373737]">
           <span>{title}</span>
           <span className="tabular-nums">
-            [{items.length}/{totalSlots} {lang === 'vi' ? 'Ô' : 'SLOTS'}]
+            [{items.length}/{effectiveTotal} {lang === 'vi' ? 'Ô' : 'SLOTS'}]
           </span>
         </div>
       )}
