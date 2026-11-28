@@ -1,5 +1,13 @@
 import { Link } from 'react-router-dom';
 
+function resolveRankText(adventurerRank) {
+  if (!adventurerRank) return '';
+  if (typeof adventurerRank === 'object') {
+    return adventurerRank.rank || '';
+  }
+  return String(adventurerRank);
+}
+
 export default function PlayerBadge({
   player,
   linkToProfile = true,
@@ -11,6 +19,7 @@ export default function PlayerBadge({
   }
 
   const username = player.username || 'Unknown';
+  const rankText = resolveRankText(player.adventurerRank);
 
   return (
     <span className={`inline-flex flex-wrap items-center gap-1.5 font-mono text-xs ${className}`}>
@@ -37,9 +46,9 @@ export default function PlayerBadge({
         </span>
       )}
 
-      {player.adventurerRank && (
+      {rankText && (
         <span className="border border-border-strong bg-subheader px-1 py-0.2 text-[11px] font-bold text-ink-primary">
-          [{player.adventurerRank}]
+          [{rankText}]
         </span>
       )}
 

@@ -8,6 +8,8 @@ import LicenseMarketPage from '../pages/market/LicenseMarketPage';
 import TradeHistoryPage from '../pages/market/TradeHistoryPage';
 import GuildDirectoryPage from '../pages/guild/GuildDirectoryPage';
 import GuildDetailPage from '../pages/guild/GuildDetailPage';
+import PlayerHubPage from '../pages/player/PlayerHubPage';
+import PublicProfilePage from '../pages/player/PublicProfilePage';
 
 const router = createBrowserRouter([
   {
@@ -40,18 +42,13 @@ const router = createBrowserRouter([
         path: 'dashboard',
         element: (
           <ProtectedRoute minRole="USER">
-            <ModulePlaceholder code="PLAYER_HUB" endpoint="GET /api/v1/players/me/profile" />
+            <PlayerHubPage />
           </ProtectedRoute>
         ),
       },
       {
         path: 'players/:username',
-        element: (
-          <ModulePlaceholder
-            code="PUBLIC_PROFILE"
-            endpoint="GET /api/v1/players/:username/profile"
-          />
-        ),
+        element: <PublicProfilePage />,
       },
       {
         path: 'operator',

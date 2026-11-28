@@ -26,6 +26,33 @@ const EQUIPMENT_LABELS = {
   artifact: { vi: 'CỔ VẬT', en: 'ARTIFACT' },
 };
 
+function resolveStringLabel(value, fallback = '') {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'object') {
+    return value.name || value.displayName || value.rank || value.id || fallback;
+  }
+  return String(value);
+}
+
+function normalizeRankDetail(rawRank) {
+  if (!rawRank) {
+    return { rank: 'F-', reputation: 0, nextRank: null, nextRankMinRep: 0, remainingToNextRank: 0, progressPercent: 0, usableReputation: 0 };
+  }
+  if (typeof rawRank === 'string') {
+    return { rank: rawRank, reputation: 0, nextRank: null, nextRankMinRep: 0, remainingToNextRank: 0, progressPercent: 0, usableReputation: 0 };
+  }
+  return {
+    rank: rawRank.rank || 'F-',
+    reputation: Number(rawRank.reputation ?? 0),
+    effectiveReputation: Number(rawRank.effectiveReputation ?? rawRank.reputation ?? 0),
+    usableReputation: Number(rawRank.usableReputation ?? 0),
+    nextRank: rawRank.nextRank || null,
+    nextRankMinRep: Number(rawRank.nextRankMinRep ?? 0),
+    remainingToNextRank: Number(rawRank.remainingToNextRank ?? 0),
+    progressPercent: Math.min(100, Math.max(0, Number(rawRank.progressPercent ?? 0))),
+  };
+}
+
 function normalizeCharacterList(profile) {
   if (!profile) return [];
   if (Array.isArray(profile.characters) && profile.characters.length > 0) {
@@ -40,7 +67,7 @@ function normalizeCharacterList(profile) {
   return [
     {
       slot: 1,
-      className: profile.className || profile.rpgClass || 'ADVENTURER',
+      className: resolveStringLabel(profile.className || profile.rpgClass, 'ADVENTURER'),
       level: profile.level ?? 1,
       exp: profile.exp ?? 0,
       maxExp: profile.maxExp ?? 100,
@@ -97,9 +124,12 @@ export default function PlayerHubPage() {
   } = useAsyncData(() => playerApi.getMyProfile(), []);
 
   const hasEmbeddedInventory = Boolean(
-    profile?.inventory || profile?.activeCharacter?.inventory || profile?.characters?.[0]?.inventory
+    profile?.inventory ||
+      profile?.activeCharacter?.inventory ||
+      profile?.characters?.[0]?.inventory
   );
   const hasEmbeddedMounts = Boolean(profile?.mounts || profile?.activeMount);
+  const hasEmbeddedJobs = Boolean(profile?.jobs || profile?.professions);
   const hasEmbeddedQuests = Boolean(profile?.quests);
   const hasEmbeddedWaystones = Boolean(profile?.waystones);
   const hasEmbeddedFriends = Boolean(profile?.friends);
@@ -114,6 +144,12 @@ export default function PlayerHubPage() {
     () => safeOptionalFetch(() => playerApi.getMyMounts()),
     [activeTab, hasEmbeddedMounts],
     { immediate: Boolean(profile && activeTab === 'MOUNTS' && !hasEmbeddedMounts) }
+  );
+
+  const { data: extraJobs, loading: jobsLoading } = useAsyncData(
+    () => safeOptionalFetch(() => playerApi.getMyJobs()),
+    [activeTab, hasEmbeddedJobs],
+    { immediate: Boolean(profile && activeTab === 'PROGRESSION' && !hasEmbeddedJobs) }
   );
 
   const { data: extraQuests, loading: questsLoading } = useAsyncData(
@@ -132,6 +168,18 @@ export default function PlayerHubPage() {
     () => safeOptionalFetch(() => playerApi.getMyFriends()),
     [activeTab, hasEmbeddedFriends],
     { immediate: Boolean(profile && activeTab === 'WORLD_SOCIAL' && !hasEmbeddedFriends) }
+  );
+
+  const { data: rewardsData, loading: rewardsLoading } = useAsyncData(
+    () => safeOptionalFetch(() => playerApi.getMyRewards()),
+    [activeTab],
+    { immediate: Boolean(profile && activeTab === 'REWARDS_BETS') }
+  );
+
+  const { data: betsData, loading: betsLoading } = useAsyncData(
+    () => safeOptionalFetch(() => playerApi.getMyLicenseBets({ page: 1, limit: 20 })),
+    [activeTab],
+    { immediate: Boolean(profile && activeTab === 'REWARDS_BETS') }
   );
 
   if (profileLoading) {
@@ -159,6 +207,9 @@ export default function PlayerHubPage() {
     );
   }
 
+  const rankDetail = normalizeRankDetail(
+    profile.adventurerRank || profile.player?.adventurerRank
+  );
   const characters = normalizeCharacterList(profile);
   const safeCharIndex = Math.min(selectedSlotIdx, Math.max(0, characters.length - 1));
   const currentChar = characters[safeCharIndex] || {};
@@ -167,7 +218,7 @@ export default function PlayerHubPage() {
     username: profile.username || profile.player?.username || 'Unknown',
     uuid: profile.uuid || profile.player?.uuid,
     isVip: Boolean(profile.isVip ?? profile.player?.isVip),
-    adventurerRank: profile.adventurerRank || profile.player?.adventurerRank,
+    adventurerRank: rankDetail.rank,
     guildTag: profile.guild?.tag || profile.guildTag,
     role: profile.role,
   };
@@ -175,7 +226,7 @@ export default function PlayerHubPage() {
   const guildInfo = profile.guild || null;
   const currencyData = profile.balance ?? profile.currency ?? profile.coins ?? 0;
 
-  // Hợp nhất dữ liệu túi đồ & trang bị
+  // Hợp nhất túi đồ & trang bị
   const invPayload = extraInventory || {};
   const inventoryItems = Array.isArray(currentChar.inventory)
     ? currentChar.inventory
@@ -224,12 +275,13 @@ export default function PlayerHubPage() {
     ? mountsSource.saddlebag
     : [];
 
-  // Hợp nhất nghề nghiệp & nhiệm vụ
-  const professionsRaw =
-    currentChar.professions || profile.professions || profile.skills || [];
-  const professionsList = Array.isArray(professionsRaw)
-    ? professionsRaw
-    : Object.entries(professionsRaw).map(([id, val]) => ({
+  // Hợp nhất nghề nghiệp (/players/me/jobs) & nhiệm vụ (/players/me/quests)
+  const jobsSource = extraJobs || currentChar || profile;
+  const jobsRaw =
+    jobsSource?.jobs || jobsSource?.professions || jobsSource?.items || jobsSource?.skills || [];
+  const professionsList = Array.isArray(jobsRaw)
+    ? jobsRaw
+    : Object.entries(jobsRaw).map(([id, val]) => ({
         id,
         name: id.toUpperCase(),
         ...(typeof val === 'object' ? val : { level: val }),
@@ -257,6 +309,22 @@ export default function PlayerHubPage() {
     ? friendsSource.items
     : [];
 
+  // Hợp nhất Hòm thưởng & Vé cược giấy phép
+  const rewardsList = Array.isArray(rewardsData?.rewards)
+    ? rewardsData.rewards
+    : Array.isArray(rewardsData?.items)
+    ? rewardsData.items
+    : Array.isArray(rewardsData)
+    ? rewardsData
+    : [];
+
+  const betsList = Array.isArray(betsData?.items) ? betsData.items : [];
+
+  const charClassLabel = resolveStringLabel(
+    currentChar.className || currentChar.rpgClass || currentChar.class,
+    'ADVENTURER'
+  ).toUpperCase();
+  const charLevel = Number(currentChar.level ?? 1);
   const charExp = Number(currentChar.exp ?? 0);
   const charMaxExp = Math.max(1, Number(currentChar.maxExp ?? currentChar.nextLevelExp ?? 100));
   const expPercent = Math.min(100, Math.max(0, Math.round((charExp / charMaxExp) * 100)));
@@ -264,8 +332,9 @@ export default function PlayerHubPage() {
   const tabs = [
     { id: 'INVENTORY', label: lang === 'vi' ? 'TÚI ĐỒ & TRANG BỊ' : 'INVENTORY & GEAR' },
     { id: 'MOUNTS', label: lang === 'vi' ? 'THÚ CƯỠI & KHO YÊN' : 'MOUNTS & SADDLEBAG' },
-    { id: 'PROGRESSION', label: lang === 'vi' ? 'NGHỀ NGHIỆP & NHIỆM VỤ' : 'PROFESSIONS & QUESTS' },
+    { id: 'PROGRESSION', label: lang === 'vi' ? 'NGHỀ NGHIỆP & NHIỆM VỤ' : 'JOBS & QUESTS' },
     { id: 'WORLD_SOCIAL', label: lang === 'vi' ? 'WAYSTONE & BẠN BÈ' : 'WAYSTONES & FRIENDS' },
+    { id: 'REWARDS_BETS', label: lang === 'vi' ? 'HÒM THƯỞNG & VÉ CƯỢC' : 'REWARDS & BETS' },
   ];
 
   const mountColumns = [
@@ -406,6 +475,97 @@ export default function PlayerHubPage() {
     },
   ];
 
+  const rewardColumns = [
+    {
+      key: 'title',
+      header: lang === 'vi' ? 'PHẦN THƯỞNG' : 'REWARD',
+      render: (row) => (
+        <div className="font-mono text-xs">
+          <div className="font-bold text-ink-primary">
+            {row.title || row.displayName || row.name || row.id}
+          </div>
+          {row.source && <div className="text-[11px] text-ink-secondary">{row.source}</div>}
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: lang === 'vi' ? 'TRẠNG THÁI' : 'STATUS',
+      align: 'right',
+      render: (row) => {
+        const claimed = Boolean(row.claimed || row.isClaimed);
+        return (
+          <StatusTag
+            label={claimed ? (lang === 'vi' ? 'ĐÃ NHẬN' : 'CLAIMED') : (lang === 'vi' ? 'CHỜ NHẬN' : 'UNCLAIMED')}
+            variant={claimed ? 'neutral' : 'emerald'}
+          />
+        );
+      },
+    },
+  ];
+
+  const betColumns = [
+    {
+      key: 'item',
+      header: lang === 'vi' ? 'KÈO GIẤY PHÉP' : 'LICENSE POOL',
+      render: (row) => (
+        <div className="font-mono text-xs">
+          <div className="font-bold text-ink-primary">{row.itemDisplayName || row.itemId}</div>
+          <div className="text-[11px] text-ink-secondary">
+            {lang === 'vi' ? 'Đặt vào: ' : 'Pick: '}
+            <strong className="text-ink-primary">{row.candidateUsername}</strong>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'amount',
+      header: lang === 'vi' ? 'TIỀN CƯỢC' : 'STAKE',
+      align: 'right',
+      render: (row) => <CurrencyDisplay currency={row.formattedAmount || row.amount} compact />,
+    },
+    {
+      key: 'payout',
+      header: lang === 'vi' ? 'THƯỞNG NHẬN' : 'PAYOUT',
+      align: 'right',
+      render: (row) =>
+        row.payoutAmount > 0 ? (
+          <CurrencyDisplay
+            currency={row.formattedPayoutAmount || row.payoutAmount}
+            compact
+          />
+        ) : (
+          <span className="font-mono text-xs text-ink-secondary">—</span>
+        ),
+    },
+    {
+      key: 'status',
+      header: lang === 'vi' ? 'KẾT QUẢ' : 'RESULT',
+      align: 'right',
+      render: (row) => {
+        const st = String(row.status || '').toUpperCase();
+        const variant =
+          st === 'WON'
+            ? 'emerald'
+            : st === 'LOST' || st === 'FAILED'
+            ? 'crimson'
+            : st === 'REFUNDED'
+            ? 'amber'
+            : 'neutral';
+        return (
+          <div className="space-y-1 font-mono text-xs">
+            <div>
+              <StatusTag label={st} variant={variant} />
+            </div>
+            <div className="text-[10px] text-ink-secondary">
+              {formatDateTime(row.settledAt || row.createdAt, lang)}
+            </div>
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="space-y-4">
       {/* Header Identity Block */}
@@ -462,11 +622,21 @@ export default function PlayerHubPage() {
 
         <div className="border-r border-border-subtle p-3.5">
           <div className="font-mono text-[11px] uppercase text-ink-secondary">
-            {lang === 'vi' ? 'LỚP NHÂN VẬT // CẤP' : 'CLASS // LEVEL'}
+            {lang === 'vi' ? 'HẠNG MẠO HIỂM // DANH VỌNG' : 'ADVENTURER RANK // REP'}
           </div>
-          <div className="mt-1 font-mono text-sm font-bold text-ink-primary tabular-nums">
-            {String(currentChar.className || currentChar.rpgClass || 'ADVENTURER').toUpperCase()} — LV.
-            {currentChar.level ?? 1}
+          <div className="mt-1 space-y-1 font-mono text-xs tabular-nums">
+            <div className="font-bold text-ink-primary">
+              [{rankDetail.rank}] — {rankDetail.reputation.toLocaleString()} REP
+              {rankDetail.nextRank ? ` -> [${rankDetail.nextRank}]` : ''}
+            </div>
+            {rankDetail.nextRank && (
+              <div className="border border-border-strong bg-canvas p-0.5">
+                <div
+                  style={{ width: `${rankDetail.progressPercent}%` }}
+                  className="h-1 bg-accent-amber"
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -491,6 +661,10 @@ export default function PlayerHubPage() {
             {characters.map((char, idx) => {
               const slotNum = char.slot ?? idx + 1;
               const isSelected = idx === safeCharIndex;
+              const slotClass = resolveStringLabel(
+                char.className || char.rpgClass || char.class,
+                'CHAR'
+              ).toUpperCase();
               return (
                 <button
                   key={char.id || slotNum}
@@ -505,8 +679,7 @@ export default function PlayerHubPage() {
                       : 'bg-canvas text-ink-primary hover:bg-subheader'
                   }`}
                 >
-                  SLOT #{slotNum} ({String(char.className || char.rpgClass || 'CHAR').toUpperCase()} LV.
-                  {char.level ?? 1})
+                  SLOT #{slotNum} ({slotClass} LV.{char.level ?? 1})
                 </button>
               );
             })}
@@ -518,17 +691,14 @@ export default function PlayerHubPage() {
           <div className="space-y-1.5 md:col-span-5">
             <div className="flex items-center justify-between font-mono text-xs tabular-nums">
               <span className="font-bold text-ink-primary">
-                LEVEL {currentChar.level ?? 1}
+                {charClassLabel} — LEVEL {charLevel}
               </span>
               <span className="text-ink-secondary">
                 EXP: {charExp.toLocaleString()} / {charMaxExp.toLocaleString()} ({expPercent}%)
               </span>
             </div>
             <div className="border border-border-strong bg-canvas p-0.5">
-              <div
-                style={{ width: `${expPercent}%` }}
-                className="h-2 bg-accent-emerald"
-              />
+              <div style={{ width: `${expPercent}%` }} className="h-2 bg-accent-emerald" />
             </div>
           </div>
 
@@ -733,15 +903,19 @@ export default function PlayerHubPage() {
         </div>
       )}
 
-      {/* TAB 3: PROFESSIONS & QUESTS */}
+      {/* TAB 3: JOBS & QUESTS */}
       {activeTab === 'PROGRESSION' && (
         <div className="grid gap-4 lg:grid-cols-12">
           <div className="space-y-3 border border-border-strong bg-surface p-4 lg:col-span-5">
             <div className="border-b border-border-subtle pb-2 font-mono text-xs font-bold uppercase text-ink-primary">
-              [PROFESSIONS // {lang === 'vi' ? 'KỸ NĂNG NGHỀ NGHIỆP' : 'LIFE SKILLS'}]
+              [JOBS // {lang === 'vi' ? 'KỸ NĂNG NGHỀ NGHIỆP' : 'LIFE SKILLS'}]
             </div>
 
-            {professionsList.length > 0 ? (
+            {jobsLoading ? (
+              <div className="border border-border-subtle bg-canvas p-6 text-center font-mono text-xs text-ink-secondary">
+                [{lang === 'vi' ? 'ĐANG TẢI NGHỀ NGHIỆP...' : 'LOADING JOBS...'}]
+              </div>
+            ) : professionsList.length > 0 ? (
               <div className="space-y-2.5">
                 {professionsList.map((prof, idx) => {
                   const pExp = Number(prof.exp ?? 0);
@@ -772,7 +946,7 @@ export default function PlayerHubPage() {
               </div>
             ) : (
               <div className="border border-border-subtle bg-canvas p-6 text-center font-mono text-xs text-ink-secondary">
-                [{lang === 'vi' ? 'CHƯA CÓ DỮ LIỆU NGHỀ NGHIỆP' : 'NO PROFESSION DATA'}]
+                [{lang === 'vi' ? 'CHƯA CÓ DỮ LIỆU NGHỀ NGHIỆP' : 'NO JOB DATA'}]
               </div>
             )}
           </div>
@@ -813,6 +987,35 @@ export default function PlayerHubPage() {
               columns={friendColumns}
               rows={friendsList}
               rowKey={(row, idx) => row.uuid || row.username || idx}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: REWARDS & LICENSE BETS */}
+      {activeTab === 'REWARDS_BETS' && (
+        <div className="grid gap-4 lg:grid-cols-12">
+          <div className="space-y-3 lg:col-span-5">
+            <div className="border border-border-strong bg-surface px-4 py-2.5 font-mono text-xs font-bold uppercase text-ink-primary">
+              [REWARDS // {lang === 'vi' ? 'HÒM THƯỞNG CÁ NHÂN' : 'PLAYER REWARDS'}]
+            </div>
+            <DataTable
+              columns={rewardColumns}
+              rows={rewardsList}
+              rowKey={(row, idx) => row.id || idx}
+              loading={rewardsLoading}
+            />
+          </div>
+
+          <div className="space-y-3 lg:col-span-7">
+            <div className="border border-border-strong bg-surface px-4 py-2.5 font-mono text-xs font-bold uppercase text-ink-primary">
+              [LICENSE BETS // {lang === 'vi' ? 'LỊCH SỬ CƯỢC GIẤY PHÉP' : 'MY LICENSE BETS'}]
+            </div>
+            <DataTable
+              columns={betColumns}
+              rows={betsList}
+              rowKey={(row, idx) => row.betId || idx}
+              loading={betsLoading}
             />
           </div>
         </div>

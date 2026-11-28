@@ -7,6 +7,14 @@ import ItemSlotCell from '../../components/rpg/ItemSlotCell';
 import PlayerBadge from '../../components/rpg/PlayerBadge';
 import StatusTag from '../../components/ui/StatusTag';
 
+function resolveStringLabel(value, fallback = '') {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'object') {
+    return value.name || value.displayName || value.rank || value.id || fallback;
+  }
+  return String(value);
+}
+
 export default function PublicProfilePage() {
   const { username } = useParams();
   const { lang } = useLanguage();
@@ -44,11 +52,16 @@ export default function PublicProfilePage() {
     );
   }
 
+  const rankObj =
+    typeof profile.adventurerRank === 'object' && profile.adventurerRank !== null
+      ? profile.adventurerRank
+      : { rank: profile.adventurerRank || 'F-' };
+
   const playerIdentity = {
     username: profile.username || username,
     uuid: profile.uuid,
     isVip: Boolean(profile.isVip),
-    adventurerRank: profile.adventurerRank,
+    adventurerRank: rankObj.rank || 'F-',
     guildTag: profile.guild?.tag || profile.guildTag,
     role: profile.role,
   };
@@ -58,6 +71,11 @@ export default function PublicProfilePage() {
     profile.character ||
     (Array.isArray(profile.characters) ? profile.characters[0] : null) ||
     {};
+
+  const classLabel = resolveStringLabel(
+    activeChar.className || activeChar.rpgClass || profile.className,
+    'ADVENTURER'
+  ).toUpperCase();
 
   const equipmentRaw = activeChar.equipment || profile.equipment || {};
   const equipmentList = Array.isArray(equipmentRaw)
@@ -74,7 +92,12 @@ export default function PublicProfilePage() {
       }))
     : [];
 
-  const professionsRaw = activeChar.professions || profile.professions || [];
+  const professionsRaw =
+    activeChar.jobs ||
+    activeChar.professions ||
+    profile.jobs ||
+    profile.professions ||
+    [];
   const professionsList = Array.isArray(professionsRaw)
     ? professionsRaw
     : Object.entries(professionsRaw).map(([id, val]) => ({
@@ -116,8 +139,13 @@ export default function PublicProfilePage() {
           <div className="font-mono text-[11px] uppercase text-ink-secondary">
             {lang === 'vi' ? 'HẠNG MẠO HIỂM' : 'ADVENTURER RANK'}
           </div>
-          <div className="mt-1 font-mono text-sm font-bold text-ink-primary">
-            {profile.adventurerRank || 'F-'}
+          <div className="mt-1 font-mono text-sm font-bold text-ink-primary tabular-nums">
+            [{rankObj.rank || 'F-'}]
+            {rankObj.reputation !== undefined && (
+              <span className="ml-1.5 text-xs font-normal text-ink-secondary">
+                ({Number(rankObj.reputation).toLocaleString()} REP)
+              </span>
+            )}
           </div>
         </div>
 
@@ -126,8 +154,7 @@ export default function PublicProfilePage() {
             {lang === 'vi' ? 'LỚP // CẤP ĐỘ' : 'CLASS // LEVEL'}
           </div>
           <div className="mt-1 font-mono text-sm font-bold text-accent-emerald tabular-nums">
-            {String(activeChar.className || activeChar.rpgClass || profile.className || 'ADVENTURER').toUpperCase()}{' '}
-            — LV.{activeChar.level ?? profile.level ?? 1}
+            {classLabel} — LV.{activeChar.level ?? profile.level ?? 1}
           </div>
         </div>
 
@@ -196,7 +223,7 @@ export default function PublicProfilePage() {
 
         <div className="space-y-3 border border-border-strong bg-surface p-4 lg:col-span-6">
           <div className="border-b border-border-subtle pb-2 font-mono text-xs font-bold uppercase text-ink-primary">
-            [PROFESSIONS // {lang === 'vi' ? 'CẤP ĐỘ NGHỀ NGHIỆP' : 'SKILL LEVELS'}]
+            [JOBS // {lang === 'vi' ? 'CẤP ĐỘ NGHỀ NGHIỆP' : 'SKILL LEVELS'}]
           </div>
 
           {professionsList.length > 0 ? (
@@ -217,7 +244,7 @@ export default function PublicProfilePage() {
             </div>
           ) : (
             <div className="border border-border-subtle bg-canvas p-6 text-center font-mono text-xs text-ink-secondary">
-              [{lang === 'vi' ? 'CHƯA CÓ DỮ LIỆU NGHỀ NGHIỆP' : 'NO PROFESSION RECORDS'}]
+              [{lang === 'vi' ? 'CHƯA CÓ DỮ LIỆU NGHỀ NGHIỆP' : 'NO JOB RECORDS'}]
             </div>
           )}
         </div>
