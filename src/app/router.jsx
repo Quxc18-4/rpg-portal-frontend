@@ -2,6 +2,12 @@ import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import AppShell from '../layouts/AppShell';
 import ProtectedRoute from '../layouts/ProtectedRoute';
 import ModulePlaceholder from '../components/ui/ModulePlaceholder';
+import LoginPage from '../pages/auth/LoginPage';
+import AuctionMarketPage from '../pages/market/AuctionMarketPage';
+import LicenseMarketPage from '../pages/market/LicenseMarketPage';
+import TradeHistoryPage from '../pages/market/TradeHistoryPage';
+import GuildDirectoryPage from '../pages/guild/GuildDirectoryPage';
+import GuildDetailPage from '../pages/guild/GuildDetailPage';
 
 const router = createBrowserRouter([
   {
@@ -9,17 +15,26 @@ const router = createBrowserRouter([
     element: <AppShell />,
     children: [
       { index: true, element: <Navigate to="/market" replace /> },
+      { path: 'login', element: <LoginPage /> },
+      { path: 'market', element: <AuctionMarketPage /> },
+      { path: 'market/licenses', element: <LicenseMarketPage /> },
+      { path: 'guilds', element: <GuildDirectoryPage /> },
       {
-        path: 'login',
-        element: <ModulePlaceholder code="AUTH_LOGIN" endpoint="POST /api/v1/auth/login" />,
+        path: 'guilds/me',
+        element: (
+          <ProtectedRoute minRole="USER">
+            <GuildDetailPage isMe />
+          </ProtectedRoute>
+        ),
       },
+      { path: 'guilds/:id', element: <GuildDetailPage /> },
       {
-        path: 'market',
-        element: <ModulePlaceholder code="AUCTION_MARKET" endpoint="GET /api/v1/market/auctions" />,
-      },
-      {
-        path: 'guilds',
-        element: <ModulePlaceholder code="GUILD_DIRECTORY" endpoint="GET /api/v1/guilds" />,
+        path: 'trades',
+        element: (
+          <ProtectedRoute minRole="USER">
+            <TradeHistoryPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'dashboard',
@@ -30,11 +45,12 @@ const router = createBrowserRouter([
         ),
       },
       {
-        path: 'trades',
+        path: 'players/:username',
         element: (
-          <ProtectedRoute minRole="USER">
-            <ModulePlaceholder code="DIRECT_TRADES" endpoint="GET /api/v1/market/trades/me" />
-          </ProtectedRoute>
+          <ModulePlaceholder
+            code="PUBLIC_PROFILE"
+            endpoint="GET /api/v1/players/:username/profile"
+          />
         ),
       },
       {
