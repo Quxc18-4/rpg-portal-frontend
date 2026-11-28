@@ -1,15 +1,19 @@
 import CurrencyDisplay from '../../../components/rpg/CurrencyDisplay';
 
 export default function OperatorOverviewKpi({ overview, loading, lang }) {
-  const eco = overview?.economy || overview || {};
-  const counts = overview?.counts || overview?.stats || {};
+  const playersInfo = overview?.players || {};
+  const guildsInfo = overview?.guilds || {};
+  const ecoInfo = overview?.economy || {};
+  const auctionInfo = ecoInfo.auctionHouse || {};
+  const tradeInfo = ecoInfo.directTrades || {};
 
-  const playerWalletsTotal = eco.totalPlayerBalance ?? eco.playerWallets ?? 0;
-  const guildBanksTotal = eco.totalGuildBalance ?? eco.guildBanks ?? 0;
-  const auctionVolumeTotal = eco.totalAuctionVolume ?? eco.marketVolume ?? 0;
-  const totalPlayers = counts.totalPlayers ?? counts.players ?? 0;
-  const activeAuctions = counts.activeAuctions ?? counts.auctions ?? 0;
-  const flaggedCount = counts.flaggedTransactions ?? eco.flaggedCount ?? 0;
+  const playerWalletsTotal = playersInfo.totalWalletCirculation || 0;
+  const guildBanksTotal = guildsInfo.totalBankReserves || 0;
+  const auctionVolumeTotal = auctionInfo.completedSalesVolume || 0;
+
+  const totalPlayers = Number(playersInfo.total ?? 0);
+  const activeAuctions = Number(auctionInfo.activeListings ?? 0);
+  const totalTrades = Number(tradeInfo.totalCompletedTrades ?? 0);
 
   return (
     <div className="grid grid-cols-2 border border-border-strong bg-surface md:grid-cols-4">
@@ -54,18 +58,15 @@ export default function OperatorOverviewKpi({ overview, loading, lang }) {
 
       <div className="p-3.5">
         <div className="font-mono text-[11px] uppercase text-ink-secondary">
-          {lang === 'vi' ? 'HỒ SƠ // CHỢ // CỜ ĐỎ' : 'PLAYERS // AUCTIONS // FLAGS'}
+          {lang === 'vi' ? 'HỒ SƠ // CHỢ // GIAO DỊCH' : 'PLAYERS // AUCTIONS // TRADES'}
         </div>
         <div className="mt-1 font-mono text-xs font-bold text-ink-primary tabular-nums">
           {loading ? (
             '[...]'
           ) : (
             <>
-              {Number(totalPlayers).toLocaleString()} PLR //{' '}
-              {Number(activeAuctions).toLocaleString()} AUC //{' '}
-              <span className={flaggedCount > 0 ? 'text-accent-crimson' : 'text-accent-emerald'}>
-                {Number(flaggedCount).toLocaleString()} FLAG
-              </span>
+              {totalPlayers.toLocaleString()} PLR // {activeAuctions.toLocaleString()} AUC //{' '}
+              <span className="text-accent-emerald">{totalTrades.toLocaleString()} TRD</span>
             </>
           )}
         </div>

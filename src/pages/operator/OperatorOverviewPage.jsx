@@ -122,20 +122,33 @@ export default function OperatorOverviewPage() {
       render: (row) => (
         <div className="font-mono text-xs">
           <div className="font-bold text-ink-primary">
-            {row.actorUsername || row.operator || 'SYSTEM'}
+            {row.actorUsername || 'SYSTEM'}{' '}
+            <span className="text-[10px] text-ink-secondary">[{row.actorRole || 'STAFF'}]</span>
           </div>
           <div className="text-[10px] text-ink-secondary">
-            {formatDateTime(row.createdAt || row.timestamp, lang)}
+            {formatDateTime(row.createdAt, lang)}
           </div>
         </div>
       ),
     },
     {
       key: 'action',
-      header: lang === 'vi' ? 'HÀNH ĐỘNG' : 'ACTION',
+      header: lang === 'vi' ? 'LỆNH // MỤC TIÊU' : 'COMMAND // TARGET',
       render: (row) => (
         <div className="space-y-1 font-mono text-xs">
-          <StatusTag label={row.action || row.type || 'AUDIT'} variant="amber" />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <StatusTag label={row.action || 'AUDIT'} variant="amber" />
+            <StatusTag
+              label={row.status || 'PENDING'}
+              variant={
+                row.status === 'EXECUTED'
+                  ? 'emerald'
+                  : row.status === 'FAILED'
+                  ? 'crimson'
+                  : 'neutral'
+              }
+            />
+          </div>
           {row.targetUsername && (
             <div className="text-[11px] text-ink-primary">
               Target:{' '}
@@ -152,11 +165,14 @@ export default function OperatorOverviewPage() {
     },
     {
       key: 'reason',
-      header: lang === 'vi' ? 'CHI TIẾT / LÝ DO' : 'REASON',
+      header: lang === 'vi' ? 'THAM SỐ // LÝ DO' : 'PAYLOAD // REASON',
       render: (row) => (
-        <span className="font-mono text-xs text-ink-secondary">
-          {row.reason || row.detail || '—'}
-        </span>
+        <div className="font-mono text-xs">
+          <div className="text-ink-primary">{row.reason || '—'}</div>
+          {row.payload && Object.keys(row.payload).length > 0 && (
+            <div className="text-[10px] text-ink-secondary">{JSON.stringify(row.payload)}</div>
+          )}
+        </div>
       ),
     },
   ];

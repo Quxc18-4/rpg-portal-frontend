@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { operatorApi } from '../../../api/services/operator.api';
 import { useAsyncData } from '../../../hooks/useAsyncData';
 import { formatDateTime } from '../../../utils/date.util';
+import ChestGrid from '../../../components/rpg/ChestGrid';
 import CurrencyDisplay from '../../../components/rpg/CurrencyDisplay';
+import ItemSlotCell from '../../../components/rpg/ItemSlotCell';
 import PlayerBadge from '../../../components/rpg/PlayerBadge';
 import DataTable from '../../../components/ui/DataTable';
 import StatusTag from '../../../components/ui/StatusTag';
@@ -15,6 +17,7 @@ export default function OperatorTransactionsTab({ onInspectTarget, lang }) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
+  const [selectedTx, setSelectedTx] = useState(null);
 
   const [appliedFilters, setAppliedFilters] = useState({
     type: 'ALL',
@@ -43,14 +46,7 @@ export default function OperatorTransactionsTab({ onInspectTarget, lang }) {
     [appliedFilters, page]
   );
 
-  const items = Array.isArray(data?.items)
-    ? data.items
-    : Array.isArray(data?.transactions)
-    ? data.transactions
-    : Array.isArray(data)
-    ? data
-    : [];
-
+  const items = Array.isArray(data?.items) ? data.items : [];
   const pagination = data?.pagination || {
     page,
     totalPages: 1,
@@ -93,8 +89,8 @@ export default function OperatorTransactionsTab({ onInspectTarget, lang }) {
       key: 'type',
       header: lang === 'vi' ? 'LOẠI // THỜI GIAN' : 'TYPE // TIMESTAMP',
       render: (row) => {
-        const txType = String(row.type || row.source || 'TRADE').toUpperCase();
-        const isFlagged = Boolean(row.isOneSided || row.flagged || row.riskFlags?.length > 0);
+        const txType = String(row.type || 'TRADE').toUpperCase();
+        const flags = Array.isArray(row.flags) ? row.flags : [];
         return (
           <div className="space-y-1 font-mono text-xs">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -102,15 +98,16 @@ export default function OperatorTransactionsTab({ onInspectTarget, lang }) {
                 label={txType}
                 variant={txType === 'AUCTION' ? 'emerald' : 'neutral'}
               />
-              {isFlagged && (
+              {flags.map((flag) => (
                 <StatusTag
-                  label={lang === 'vi' ? 'CỜ ĐỎ // 1 CHIỀU' : 'ONE-SIDED FLAG'}
-                  variant="crimson"
+                  key={flag}
+                  label={flag}
+                  variant={flag === 'ONE_SIDED_TRANSFER' ? 'crimson' : 'amber'}
                 />
-              )}
+              ))}
             </div>
             <div className="text-[10px] text-ink-secondary">
-              {formatDateTime(row.timestamp || row.createdAt || row.soldAt, lang)}
+              {formatDateTime(row.timestamp, lang)}
             </div>
           </div>
         );
@@ -120,45 +117,51 @@ export default function OperatorTransactionsTab({ onInspectTarget, lang }) {
       key: 'parties',
       header: lang === 'vi' ? 'CÁC BÊN THAM GIA' : 'PARTIES INVOLVED',
       render: (row) => {
-        const p1 =
-          row.sellerUsername ||
-          row.side1?.username ||
-          row.fromUsername ||
-          row.player1 ||
-          'Unknown';
-        const p2 =
-          row.buyerUsername ||
-          row.side2?.username ||
-          row.toUsername ||
-          row.player2 ||
-          'Unknown';
+        const p1 = row.participants?.from || row.participants?.side1 || null;
+        const p2 = row.participants?.to || row.participants?.side2 || null;
 
         return (
           <div className="space-y-1 font-mono text-xs">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] text-ink-secondary">[A]</span>
-              <PlayerBadge player={{ username: p1 }} />
-              {onInspectTarget && p1 !== 'Unknown' && (
-                <button
-                  type="button"
-                  onClick={() => onInspectTarget(p1)}
-                  className="border border-border-strong bg-canvas px-1.5 py-0.5 text-[10px] font-bold text-accent-emerald hover:bg-subheader"
-                >
-                  [SOI 360]
-                </button>
+              <span className="text-[10px] text-ink-secondary">
+                {row.type === 'AUCTION' ? '[BÁN]' : '[A]'}
+              </span>
+              {p1?.username ? (
+                <>
+                  <PlayerBadge player={p1} />
+                  {onInspectTarget && (
+                    <button
+                      type="button"
+                      onClick={() => onInspectTarget(p1.username)}
+                      className="border border-border-strong bg-canvas px-1.5 py-0.5 text-[10px] font-bold text-accent-emerald hover:bg-subheader"
+                    >
+                      [SOI 360]
+                    </button>
+                  )}
+                </>
+              ) : (
+                <span className="text-ink-secondary">Unknown</span>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] text-ink-secondary">[B]</span>
-              <PlayerBadge player={{ username: p2 }} />
-              {onInspectTarget && p2 !== 'Unknown' && (
-                <button
-                  type="button"
-                  onClick={() => onInspectTarget(p2)}
-                  className="border border-border-strong bg-canvas px-1.5 py-0.5 text-[10px] font-bold text-accent-emerald hover:bg-subheader"
-                >
-                  [SOI 360]
-                </button>
+              <span className="text-[10px] text-ink-secondary">
+                {row.type === 'AUCTION' ? '[MUA]' : '[B]'}
+              </span>
+              {p2?.username ? (
+                <>
+                  <PlayerBadge player={p2} />
+                  {onInspectTarget && (
+                    <button
+                      type="button"
+                      onClick={() => onInspectTarget(p2.username)}
+                      className="border border-border-strong bg-canvas px-1.5 py-0.5 text-[10px] font-bold text-accent-emerald hover:bg-subheader"
+                    >
+                      [SOI 360]
+                    </button>
+                  )}
+                </>
+              ) : (
+                <span className="text-ink-secondary">—</span>
               )}
             </div>
           </div>
@@ -168,40 +171,29 @@ export default function OperatorTransactionsTab({ onInspectTarget, lang }) {
     {
       key: 'assets',
       header: lang === 'vi' ? 'TÀI SẢN TRAO ĐỔI' : 'EXCHANGED ASSETS',
-      render: (row) => {
-        const itemLabel =
-          row.item?.displayName ||
-          row.itemName ||
-          (Array.isArray(row.side1?.items)
-            ? `${row.side1.items.length} vật phẩm <-> ${row.side2?.items?.length || 0} vật phẩm`
-            : row.summary || '—');
-
-        return (
-          <div className="font-mono text-xs">
-            <div className="font-semibold text-ink-primary">{itemLabel}</div>
-            {row.flagReason && (
-              <div className="text-[11px] font-bold text-accent-crimson">
-                [{row.flagReason}]
-              </div>
-            )}
-          </div>
-        );
-      },
+      render: (row) => (
+        <div className="font-mono text-xs">
+          <div className="font-semibold text-ink-primary">{row.summary || '—'}</div>
+          <div className="text-[10px] text-ink-secondary">{row.auditId}</div>
+        </div>
+      ),
     },
     {
       key: 'value',
-      header: lang === 'vi' ? 'GIÁ TRỊ TIỀN TỆ' : 'CURRENCY VALUE',
+      header: lang === 'vi' ? 'GIÁ TRỊ // CHI TIẾT' : 'VALUE // INSPECT',
       align: 'right',
-      render: (row) => {
-        const val =
-          row.price ??
-          row.amount ??
-          row.totalCopper ??
-          row.side1?.currency ??
-          row.side2?.currency ??
-          0;
-        return <CurrencyDisplay currency={val} compact />;
-      },
+      render: (row) => (
+        <div className="flex flex-col items-end gap-1.5 font-mono text-xs">
+          <CurrencyDisplay currency={row.valueCopper || 0} compact />
+          <button
+            type="button"
+            onClick={() => setSelectedTx(row)}
+            className="border border-border-strong bg-canvas px-2 py-0.5 text-[10px] font-bold text-ink-primary hover:bg-ink-primary hover:text-white"
+          >
+            [{lang === 'vi' ? 'XEM CHI TIẾT' : 'INSPECT TX'}]
+          </button>
+        </div>
+      ),
     },
   ];
 
@@ -214,7 +206,8 @@ export default function OperatorTransactionsTab({ onInspectTarget, lang }) {
       >
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle pb-2">
           <span className="font-bold uppercase text-ink-primary">
-            [TRANSACTION AUDIT // {lang === 'vi' ? 'BỘ LỌC SOÁT XÉT DÒNG TIỀN & RMT' : 'AML & RMT FILTER'}]
+            [TRANSACTION AUDIT //{' '}
+            {lang === 'vi' ? 'BỘ LỌC SOÁT XÉT DÒNG TIỀN & RMT' : 'AML & RMT FILTER'}]
           </span>
           <button
             type="button"
@@ -325,7 +318,7 @@ export default function OperatorTransactionsTab({ onInspectTarget, lang }) {
       <DataTable
         columns={columns}
         rows={items}
-        rowKey={(row, idx) => row.id || row._id || row.tradeId || row.auctionId || idx}
+        rowKey={(row, idx) => row.auditId || idx}
         loading={loading}
       />
 
@@ -358,6 +351,105 @@ export default function OperatorTransactionsTab({ onInspectTarget, lang }) {
           </button>
         </div>
       </div>
+
+      {/* Transaction Detail Modal */}
+      {selectedTx && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setSelectedTx(null)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto border-2 border-border-strong bg-surface p-5 font-mono text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border-strong pb-3">
+              <div>
+                <div className="font-bold uppercase text-accent-crimson">
+                  [AUDIT RECORD DETAIL // {selectedTx.auditId}]
+                </div>
+                <div className="text-[11px] text-ink-secondary">
+                  {formatDateTime(selectedTx.timestamp, lang)}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedTx(null)}
+                className="border border-border-strong bg-canvas px-2.5 py-1 font-bold hover:bg-subheader"
+              >
+                [X]
+              </button>
+            </div>
+
+            {selectedTx.type === 'AUCTION' && selectedTx.detail && (
+              <div className="mt-4 space-y-4">
+                <div className="flex items-start gap-3 border border-border-subtle bg-canvas p-3">
+                  <ItemSlotCell item={selectedTx.detail.item} size="lg" />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="font-bold text-ink-primary">
+                      {selectedTx.detail.item?.displayName || selectedTx.detail.item?.type} x
+                      {selectedTx.detail.item?.amount ?? 1}
+                    </div>
+                    <div className="text-[11px] text-ink-secondary">
+                      Seller: <strong>{selectedTx.detail.seller?.username || 'Unknown'}</strong> |
+                      Buyer: <strong>{selectedTx.detail.buyer?.username || '—'}</strong>
+                    </div>
+                    <div>
+                      <CurrencyDisplay currency={selectedTx.detail.price || 0} />
+                    </div>
+                  </div>
+                </div>
+
+                {Array.isArray(selectedTx.detail.item?.lore) &&
+                  selectedTx.detail.item.lore.length > 0 && (
+                    <div className="border-2 border-mc-tooltip-border bg-mc-tooltip-bg p-3 text-[11px] text-[#AAAAAA]">
+                      {selectedTx.detail.item.lore.map((line, i) => (
+                        <div key={i}>{line || '\u00A0'}</div>
+                      ))}
+                    </div>
+                  )}
+              </div>
+            )}
+
+            {selectedTx.type === 'TRADE' && selectedTx.detail && (
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {/* Side 1 */}
+                <div className="space-y-2 border border-border-strong bg-canvas p-3">
+                  <div className="border-b border-border-subtle pb-1.5 font-bold text-ink-primary">
+                    [SIDE 1 // {selectedTx.detail.side1?.player?.username || 'Unknown'}]
+                  </div>
+                  <div>
+                    <CurrencyDisplay currency={selectedTx.detail.side1?.currency || 0} compact />
+                  </div>
+                  <div className="overflow-x-auto">
+                    <ChestGrid
+                      items={selectedTx.detail.side1?.items || []}
+                      totalSlots={18}
+                      mode="index"
+                    />
+                  </div>
+                </div>
+
+                {/* Side 2 */}
+                <div className="space-y-2 border border-border-strong bg-canvas p-3">
+                  <div className="border-b border-border-subtle pb-1.5 font-bold text-ink-primary">
+                    [SIDE 2 // {selectedTx.detail.side2?.player?.username || 'Unknown'}]
+                  </div>
+                  <div>
+                    <CurrencyDisplay currency={selectedTx.detail.side2?.currency || 0} compact />
+                  </div>
+                  <div className="overflow-x-auto">
+                    <ChestGrid
+                      items={selectedTx.detail.side2?.items || []}
+                      totalSlots={18}
+                      mode="index"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,9 +3,11 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { operatorApi } from '../../api/services/operator.api';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { useLanguage } from '../../hooks/useLanguage';
+import { useAuth } from '../../hooks/useAuth';
 import { formatDateTime } from '../../utils/date.util';
 import ChestGrid from '../../components/rpg/ChestGrid';
 import CurrencyDisplay from '../../components/rpg/CurrencyDisplay';
+import ItemSlotCell from '../../components/rpg/ItemSlotCell';
 import PlayerBadge from '../../components/rpg/PlayerBadge';
 import DataTable from '../../components/ui/DataTable';
 import StatusTag from '../../components/ui/StatusTag';
@@ -14,31 +16,122 @@ const MAIN_INVENTORY_SLOTS = Array.from({ length: 27 }, (_, i) => i + 9);
 const HOTBAR_SLOTS = Array.from({ length: 9 }, (_, i) => i);
 
 const COMMAND_PRESETS = [
-  { id: 'WARN', label: { vi: 'GỬI CẢNH CÁO IN-GAME', en: 'SEND WARNING' } },
-  { id: 'KICK', label: { vi: 'ĐUỔI KHỎI SERVER (KICK)', en: 'KICK PLAYER' } },
-  { id: 'FREEZE', label: { vi: 'TẠM KHÓA GIAO DỊCH / ĐÓNG BĂNG', en: 'FREEZE ACCOUNT' } },
-  { id: 'GIVE_CURRENCY', label: { vi: 'CỘNG / TRỪ TIỀN (COPPER)', en: 'ADJUST CURRENCY' } },
-  { id: 'SYNC_SAVE', label: { vi: 'ÉP ĐỒNG BỘ LƯU DỮ LIỆU', en: 'FORCE SAVE DATA' } },
+  {
+    id: 'WARN_PLAYER',
+    adminOnly: false,
+    paramKey: 'message',
+    paramType: 'text',
+    placeholder: { vi: 'Nội dung cảnh cáo gửi vào chat...', en: 'Warning message...' },
+    label: { vi: 'GỬI CẢNH CÁO IN-GAME', en: 'SEND WARNING' },
+  },
+  {
+    id: 'MUTE_PLAYER',
+    adminOnly: false,
+    paramKey: 'minutes',
+    paramType: 'number',
+    placeholder: { vi: 'Số phút cấm chat (vd: 60)', en: 'Minutes (e.g. 60)' },
+    label: { vi: 'CẤM CHAT TẠM THỜI (MUTE)', en: 'MUTE PLAYER' },
+  },
+  {
+    id: 'UNMUTE_PLAYER',
+    adminOnly: false,
+    paramKey: null,
+    label: { vi: 'GỠ CẤM CHAT (UNMUTE)', en: 'UNMUTE PLAYER' },
+  },
+  {
+    id: 'KICK_PLAYER',
+    adminOnly: false,
+    paramKey: 'message',
+    paramType: 'text',
+    placeholder: { vi: 'Lý do đuổi khỏi server...', en: 'Kick message...' },
+    label: { vi: 'ĐUỔI KHỎI SERVER (KICK)', en: 'KICK PLAYER' },
+  },
+  {
+    id: 'FREEZE_PLAYER',
+    adminOnly: false,
+    paramKey: 'frozen',
+    paramType: 'boolean',
+    label: { vi: 'ĐÓNG BĂNG / MỞ ĐÓNG BĂNG', en: 'TOGGLE FREEZE' },
+  },
+  {
+    id: 'EXTEND_WAYSTONE_TAX',
+    adminOnly: false,
+    paramKey: 'days',
+    paramType: 'number',
+    placeholder: { vi: 'Số ngày gia hạn thuế (vd: 3)', en: 'Days to extend (e.g. 3)' },
+    label: { vi: 'GIA HẠN THUẾ WAYSTONE', en: 'EXTEND WAYSTONE TAX' },
+  },
+  {
+    id: 'SEND_COMPENSATION',
+    adminOnly: false,
+    paramKey: 'coins',
+    paramType: 'number',
+    placeholder: { vi: 'Số Copper bồi thường (vd: 1024)', en: 'Coins in copper' },
+    label: { vi: 'GỬI TIỀN BỒI THƯỜNG', en: 'SEND COMPENSATION' },
+  },
+  {
+    id: 'FORCE_SAVE',
+    adminOnly: false,
+    paramKey: null,
+    label: { vi: 'ÉP LƯU DỮ LIỆU NGAY', en: 'FORCE SAVE DATA' },
+  },
+  {
+    id: 'ADJUST_COINS',
+    adminOnly: true,
+    paramKey: 'coins',
+    paramType: 'number',
+    placeholder: { vi: 'Số Copper (+ cộng / - trừ, vd: -4096)', en: 'Copper delta (e.g. -4096)' },
+    label: { vi: 'CỘNG / TRỪ TIỀN TỆ [ADMIN]', en: 'ADJUST COINS [ADMIN]' },
+  },
+  {
+    id: 'GIVE_ITEM',
+    adminOnly: true,
+    paramKey: 'itemSpec',
+    paramType: 'text',
+    placeholder: { vi: 'item_id:số_lượng (vd: upgrade_stone:10)', en: 'item_id:amount' },
+    label: { vi: 'PHÁT VẬT PHẨM RPG [ADMIN]', en: 'GIVE RPG ITEM [ADMIN]' },
+  },
+  {
+    id: 'BAN_PLAYER',
+    adminOnly: true,
+    paramKey: 'minutes',
+    paramType: 'number',
+    placeholder: { vi: 'Số phút khóa (0 = vĩnh viễn)', en: 'Ban minutes (0 = permanent)' },
+    label: { vi: 'KHÓA TÀI KHOẢN (BAN) [ADMIN]', en: 'BAN PLAYER [ADMIN]' },
+  },
+  {
+    id: 'UNBAN_PLAYER',
+    adminOnly: true,
+    paramKey: null,
+    label: { vi: 'MỞ KHÓA TÀI KHOẢN [ADMIN]', en: 'UNBAN PLAYER [ADMIN]' },
+  },
 ];
 
 function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+
   const [searchInput, setSearchInput] = useState(initialUsername);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [detailTab, setDetailTab] = useState('INVENTORY');
+  const [inspectedItem, setInspectedItem] = useState(null);
 
   // Inventory scan
   const [invKeyword, setInvKeyword] = useState('');
   const [invSearchResults, setInvSearchResults] = useState(null);
 
   // Command queue
-  const [actionType, setActionType] = useState('WARN');
-  const [actionValue, setActionValue] = useState('');
+  const [actionType, setActionType] = useState('WARN_PLAYER');
+  const [actionParam, setActionParam] = useState('');
   const [actionReason, setActionReason] = useState('');
   const [confirmingAction, setConfirmingAction] = useState(false);
   const [actionFeedback, setActionFeedback] = useState(null);
   const [actionSubmitting, setActionSubmitting] = useState(false);
 
   const targetUsername = initialUsername;
+  const availableCommands = COMMAND_PRESETS.filter((c) => !c.adminOnly || isAdmin);
+  const currentCmdDef =
+    availableCommands.find((c) => c.id === actionType) || availableCommands[0];
 
   const {
     data: inspectData,
@@ -55,32 +148,10 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
     { immediate: Boolean(targetUsername) }
   );
 
-  const activeSlot = selectedSlot ?? inspectData?.selectedSlot ?? inspectData?.activeSlot ?? 1;
-
-  const { data: invData, loading: invLoading } = useAsyncData(
-    async () => {
-      try {
-        return await operatorApi.inspectPlayerInventory(targetUsername, { slot: activeSlot });
-      } catch {
-        return null;
-      }
-    },
-    [targetUsername, activeSlot],
-    { immediate: Boolean(targetUsername && inspectData && detailTab === 'INVENTORY') }
-  );
-
-  const { data: worldData, loading: worldLoading } = useAsyncData(
-    async () => {
-      const [jobs, mounts, waystones] = await Promise.all([
-        operatorApi.inspectPlayerJobs(targetUsername).catch(() => null),
-        operatorApi.inspectPlayerMounts(targetUsername).catch(() => null),
-        operatorApi.inspectPlayerWaystones(targetUsername).catch(() => null),
-      ]);
-      return { jobs, mounts, waystones };
-    },
-    [targetUsername],
-    { immediate: Boolean(targetUsername && inspectData && detailTab === 'WORLD') }
-  );
+  // Backend inspectPlayerOverview trả về { profile, inventory, jobs, mounts, crops, waystones }
+  const profile = inspectData?.profile || {};
+  const inventoryObj = inspectData?.inventory || {};
+  const activeSlot = selectedSlot ?? profile.selectedSlot ?? profile.activeSlot ?? 1;
 
   const { data: marketData, loading: marketLoading } = useAsyncData(
     async () => {
@@ -110,12 +181,29 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
     try {
       const res = await operatorApi.searchPlayerInventory(targetUsername, {
         q: invKeyword.trim(),
-        slot: activeSlot,
       });
       setInvSearchResults(res);
     } catch {
-      setInvSearchResults({ totalMatches: 0, results: [] });
+      setInvSearchResults({ totalMatched: 0, items: [] });
     }
+  };
+
+  const buildCommandPayload = () => {
+    if (!currentCmdDef?.paramKey) return {};
+    if (currentCmdDef.paramType === 'number') {
+      return { [currentCmdDef.paramKey]: Number(actionParam || 0) };
+    }
+    if (currentCmdDef.paramType === 'boolean') {
+      return { frozen: actionParam !== 'false' };
+    }
+    if (currentCmdDef.paramKey === 'itemSpec') {
+      const [itemId, amtStr] = String(actionParam).split(':');
+      return {
+        itemId: (itemId || '').trim(),
+        amount: Math.max(1, Number(amtStr) || 1),
+      };
+    }
+    return { [currentCmdDef.paramKey]: String(actionParam || '').trim() };
   };
 
   const handleDispatchAction = async () => {
@@ -123,14 +211,11 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
     setActionSubmitting(true);
     setActionFeedback(null);
     try {
-      const payload = {
+      await operatorApi.dispatchPlayerAction(targetUsername, {
         action: actionType,
+        payload: buildCommandPayload(),
         reason: actionReason.trim(),
-      };
-      if (actionValue.trim() !== '') {
-        payload.value = actionValue.trim();
-      }
-      await operatorApi.dispatchPlayerAction(targetUsername, payload);
+      });
       setActionFeedback({
         ok: true,
         text:
@@ -139,7 +224,7 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
             : `Queued [${actionType}] command for ${targetUsername}.`,
       });
       setConfirmingAction(false);
-      setActionValue('');
+      setActionParam('');
       setActionReason('');
     } catch (err) {
       setActionFeedback({
@@ -152,17 +237,13 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
     }
   };
 
-  const vanillaInventory = Array.isArray(invData?.vanillaInventory)
-    ? invData.vanillaInventory
+  const vanillaInventory = Array.isArray(inventoryObj.vanillaInventory)
+    ? inventoryObj.vanillaInventory
     : [];
-  const enderChest = Array.isArray(invData?.enderChest) ? invData.enderChest : [];
-  const backpacks = Array.isArray(invData?.backpacks) ? invData.backpacks : [];
+  const enderChest = Array.isArray(inventoryObj.enderChest) ? inventoryObj.enderChest : [];
+  const backpacks = Array.isArray(inventoryObj.backpacks) ? inventoryObj.backpacks : [];
 
-  const tradesList = Array.isArray(marketData?.trades?.items)
-    ? marketData.trades.items
-    : Array.isArray(marketData?.trades)
-    ? marketData.trades
-    : [];
+  const tradesList = Array.isArray(marketData?.trades?.items) ? marketData.trades.items : [];
 
   const tradeColumns = [
     {
@@ -171,10 +252,10 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
       render: (row) => (
         <div className="font-mono text-xs">
           <div className="font-bold text-ink-primary">
-            {row.perspective?.partner || row.side2?.username || 'Unknown'}
+            {row.perspective?.partner?.username || row.side2?.player?.username || 'Unknown'}
           </div>
           <div className="text-[10px] text-ink-secondary">
-            {formatDateTime(row.timestamp || row.createdAt, lang)}
+            {formatDateTime(row.tradedAt || row.createdAt, lang)}
           </div>
         </div>
       ),
@@ -296,15 +377,15 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
 
               <PlayerBadge
                 player={{
-                  username: inspectData.username || targetUsername,
-                  uuid: inspectData.uuid,
-                  isVip: inspectData.isVip,
+                  username: profile.username || targetUsername,
+                  uuid: profile.uuid,
+                  isVip: profile.isVip,
                   adventurerRank:
-                    typeof inspectData.adventurerRank === 'object'
-                      ? inspectData.adventurerRank?.rank
-                      : inspectData.adventurerRank,
-                  guildTag: inspectData.guild?.tag,
-                  role: inspectData.role,
+                    typeof profile.adventurerRank === 'object'
+                      ? profile.adventurerRank?.rank
+                      : profile.adventurerRank,
+                  guildTag: profile.guild?.tag,
+                  role: profile.role,
                 }}
                 showUuid
               />
@@ -313,21 +394,20 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
                 <div className="border border-border-subtle bg-canvas p-2">
                   <div className="text-[10px] text-ink-secondary">CLASS // LEVEL</div>
                   <div className="font-bold text-ink-primary">
-                    {String(inspectData.class || 'COMMONER').toUpperCase()} LV.
-                    {inspectData.level ?? 1}
+                    {String(profile.class || 'COMMONER').toUpperCase()} LV.{profile.level ?? 1}
                   </div>
                 </div>
                 <div className="border border-border-subtle bg-canvas p-2">
                   <div className="text-[10px] text-ink-secondary">SLOT BALANCE</div>
                   <div className="mt-0.5">
-                    <CurrencyDisplay currency={inspectData.currency || 0} compact />
+                    <CurrencyDisplay currency={profile.currency || 0} compact />
                   </div>
                 </div>
               </div>
 
-              {Array.isArray(inspectData.slotsSummary) && inspectData.slotsSummary.length > 0 && (
+              {Array.isArray(profile.slotsSummary) && profile.slotsSummary.length > 0 && (
                 <div className="flex flex-wrap gap-1 pt-1">
-                  {inspectData.slotsSummary
+                  {profile.slotsSummary
                     .filter((s) => s.isCreated || s.slot === activeSlot)
                     .map((s) => (
                       <button
@@ -364,11 +444,12 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
                   value={actionType}
                   onChange={(e) => {
                     setActionType(e.target.value);
+                    setActionParam('');
                     setConfirmingAction(false);
                   }}
                   className="w-full border border-border-strong bg-canvas px-2.5 py-1.5 text-xs font-bold text-ink-primary"
                 >
-                  {COMMAND_PRESETS.map((cmd) => (
+                  {availableCommands.map((cmd) => (
                     <option key={cmd.id} value={cmd.id}>
                       [{cmd.id}] — {cmd.label[lang]}
                     </option>
@@ -376,24 +457,33 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
                 </select>
               </div>
 
-              {(actionType === 'GIVE_CURRENCY' || actionType === 'WARN') && (
+              {currentCmdDef?.paramKey && (
                 <div>
                   <label className="mb-1 block text-[10px] font-bold uppercase text-ink-secondary">
-                    {actionType === 'GIVE_CURRENCY'
-                      ? lang === 'vi'
-                        ? 'SỐ TIỀN (COPPER — CÓ THỂ ÂM)'
-                        : 'AMOUNT (COPPER)'
-                      : lang === 'vi'
-                      ? 'NỘI DUNG TIN NHẮN'
-                      : 'MESSAGE PAYLOAD'}
+                    {lang === 'vi' ? 'THAM SỐ LỆNH' : 'COMMAND PARAMETER'}
                   </label>
-                  <input
-                    type="text"
-                    value={actionValue}
-                    onChange={(e) => setActionValue(e.target.value)}
-                    placeholder={actionType === 'GIVE_CURRENCY' ? 'vd: -4096' : 'Nội dung cảnh cáo'}
-                    className="w-full border border-border-strong bg-canvas px-2.5 py-1.5 text-xs text-ink-primary"
-                  />
+                  {currentCmdDef.paramType === 'boolean' ? (
+                    <select
+                      value={actionParam || 'true'}
+                      onChange={(e) => setActionParam(e.target.value)}
+                      className="w-full border border-border-strong bg-canvas px-2.5 py-1.5 text-xs font-bold text-ink-primary"
+                    >
+                      <option value="true">
+                        {lang === 'vi' ? 'BẬT ĐÓNG BĂNG (FREEZE)' : 'FREEZE = TRUE'}
+                      </option>
+                      <option value="false">
+                        {lang === 'vi' ? 'GỠ ĐÓNG BĂNG (UNFREEZE)' : 'FREEZE = FALSE'}
+                      </option>
+                    </select>
+                  ) : (
+                    <input
+                      type={currentCmdDef.paramType === 'number' ? 'number' : 'text'}
+                      value={actionParam}
+                      onChange={(e) => setActionParam(e.target.value)}
+                      placeholder={currentCmdDef.placeholder?.[lang] || ''}
+                      className="w-full border border-border-strong bg-canvas px-2.5 py-1.5 text-xs text-ink-primary"
+                    />
+                  )}
                 </div>
               )}
 
@@ -494,7 +584,7 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
                       type="text"
                       value={invKeyword}
                       onChange={(e) => setInvKeyword(e.target.value)}
-                      placeholder={lang === 'vi' ? 'Tìm trong túi...' : 'Search bag...'}
+                      placeholder={lang === 'vi' ? 'Tìm trong mọi túi...' : 'Search all bags...'}
                       className="border border-border-strong bg-canvas px-2 py-1 text-xs"
                     />
                     <button
@@ -510,8 +600,9 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
                   <div className="space-y-1.5 border border-border-strong bg-canvas p-3 font-mono text-xs">
                     <div className="flex items-center justify-between font-bold">
                       <span>
-                        [MATCHES: {invSearchResults.totalMatches ?? 0} FOR &quot;
-                        {invSearchResults.keyword}&quot;]
+                        [MATCHED: {invSearchResults.totalMatched ?? 0} SLOTS (x
+                        {invSearchResults.totalQuantity ?? 0}) FOR &quot;{invSearchResults.keyword}
+                        &quot;]
                       </span>
                       <button
                         type="button"
@@ -521,107 +612,142 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
                         [X]
                       </button>
                     </div>
-                    {(invSearchResults.results || []).map((m, idx) => (
+                    {(invSearchResults.items || []).map((m, idx) => (
                       <div
                         key={idx}
                         className="flex items-center justify-between border-t border-border-subtle pt-1 text-[11px]"
                       >
-                        <span className="font-bold text-ink-primary">
-                          {m.item?.displayName || m.item?.type} x{m.item?.amount ?? 1}
-                        </span>
-                        <StatusTag label={m.locationLabel || m.containerType} variant="emerald" />
+                        <button
+                          type="button"
+                          onClick={() => setInspectedItem(m)}
+                          className="text-left font-bold text-ink-primary hover:text-accent-emerald"
+                        >
+                          {m.displayName || m.type} x{m.amount ?? 1}
+                        </button>
+                        <StatusTag
+                          label={m.mountName || m.source || `SLOT #${m.slot ?? '?'}`}
+                          variant="emerald"
+                        />
                       </div>
                     ))}
                   </div>
                 )}
 
-                {invLoading ? (
-                  <div className="p-6 text-center font-mono text-xs text-ink-secondary">
-                    [{lang === 'vi' ? 'ĐANG GIẢI MÃ TÚI ĐỒ...' : 'DECODING INVENTORY...'}]
-                  </div>
-                ) : (
-                  <div className="space-y-3 overflow-x-auto">
-                    <ChestGrid
-                      title={lang === 'vi' ? 'TÚI ĐỒ CHÍNH (27 Ô)' : 'MAIN INVENTORY (27 SLOTS)'}
-                      items={vanillaInventory}
-                      slotIndices={MAIN_INVENTORY_SLOTS}
-                      mode="slot"
-                    />
-                    <ChestGrid
-                      title={lang === 'vi' ? 'THANH PHÍM TẮT (9 Ô)' : 'HOTBAR (9 SLOTS)'}
-                      items={vanillaInventory}
-                      slotIndices={HOTBAR_SLOTS}
-                      mode="slot"
-                    />
-                    {enderChest.length > 0 && (
-                      <ChestGrid
-                        title="ENDER CHEST (27 SLOTS)"
-                        items={enderChest}
-                        totalSlots={27}
-                        mode="slot"
-                      />
-                    )}
-                    {backpacks.length > 0 && (
-                      <div className="border-t border-border-subtle pt-2 font-mono text-xs text-ink-secondary">
-                        [BACKPACKS: {backpacks.length} —{' '}
-                        {backpacks
-                          .map((b) => `${b.bagName} (${b.items?.length || 0} items)`)
-                          .join(', ')}
-                        ]
-                      </div>
-                    )}
+                {inspectedItem && (
+                  <div className="border-2 border-mc-tooltip-border bg-mc-tooltip-bg p-2.5 font-mono text-xs text-white">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#55FFFF]">
+                        {inspectedItem.displayName || inspectedItem.type}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setInspectedItem(null)}
+                        className="text-[#AAAAAA] hover:text-white"
+                      >
+                        [X]
+                      </button>
+                    </div>
+                    <div className="mt-1 space-y-0.5 text-[11px] text-[#AAAAAA]">
+                      {(inspectedItem.lore || []).map((line, i) => (
+                        <div key={i}>{line || '\u00A0'}</div>
+                      ))}
+                    </div>
                   </div>
                 )}
+
+                <div className="space-y-3 overflow-x-auto">
+                  <ChestGrid
+                    title={lang === 'vi' ? 'TÚI ĐỒ CHÍNH (27 Ô)' : 'MAIN INVENTORY (27 SLOTS)'}
+                    items={vanillaInventory}
+                    slotIndices={MAIN_INVENTORY_SLOTS}
+                    mode="slot"
+                    onSelectItem={(it) => setInspectedItem(it)}
+                  />
+                  <ChestGrid
+                    title={lang === 'vi' ? 'THANH PHÍM TẮT (9 Ô)' : 'HOTBAR (9 SLOTS)'}
+                    items={vanillaInventory}
+                    slotIndices={HOTBAR_SLOTS}
+                    mode="slot"
+                    onSelectItem={(it) => setInspectedItem(it)}
+                  />
+                  {enderChest.length > 0 && (
+                    <ChestGrid
+                      title="ENDER CHEST (27 SLOTS)"
+                      items={enderChest}
+                      totalSlots={27}
+                      mode="slot"
+                      onSelectItem={(it) => setInspectedItem(it)}
+                    />
+                  )}
+                  {backpacks.length > 0 && (
+                    <div className="space-y-2 border-t border-border-subtle pt-2 font-mono text-xs">
+                      <div className="font-bold text-ink-primary">
+                        [BACKPACKS: {backpacks.length}]
+                      </div>
+                      {backpacks.map((b) => (
+                        <div
+                          key={b.bagUuid}
+                          className="flex items-center justify-between border border-border-subtle bg-canvas px-2.5 py-1.5"
+                        >
+                          <span>
+                            <strong>{b.bagName}</strong> ({b.parentLocation} #{b.locatedAtSlot})
+                          </span>
+                          <span className="text-ink-secondary">
+                            {b.items?.length || 0} items
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
             {detailTab === 'WORLD' && (
               <div className="space-y-3 border border-border-strong bg-surface p-4 font-mono text-xs">
-                {worldLoading ? (
-                  <div className="p-6 text-center text-ink-secondary">[LOADING ASSETS...]</div>
-                ) : (
-                  <>
-                    <div className="border border-border-subtle bg-canvas p-3">
-                      <div className="font-bold text-ink-primary">
-                        [WAYSTONES]: {worldData?.waystones?.total ?? 0}{' '}
-                        {lang === 'vi' ? 'điểm sở hữu' : 'owned'}
+                <div className="border border-border-subtle bg-canvas p-3">
+                  <div className="font-bold text-ink-primary">
+                    [WAYSTONES]: {inspectData.waystones?.total ?? 0}{' '}
+                    {lang === 'vi' ? 'điểm sở hữu' : 'owned'}
+                  </div>
+                  <div className="mt-1 space-y-1 text-[11px] text-ink-secondary">
+                    {(inspectData.waystones?.waystones || []).map((ws) => (
+                      <div key={ws.id || ws.waystoneId}>
+                        • <strong>{ws.customName || ws.waystoneId}</strong> (LV.{ws.level ?? 1})
+                        {ws.coordinates
+                          ? ` — ${ws.coordinates.world} (${Math.round(ws.coordinates.x)}, ${Math.round(ws.coordinates.y)}, ${Math.round(ws.coordinates.z)})`
+                          : ' — UNPLACED'}
                       </div>
-                      <div className="mt-1 space-y-1 text-[11px] text-ink-secondary">
-                        {(worldData?.waystones?.waystones || []).map((ws) => (
-                          <div key={ws.id || ws.waystoneId}>
-                            • <strong>{ws.customName || ws.waystoneId}</strong> (LV.{ws.level ?? 1})
-                            {ws.coordinates
-                              ? ` — ${ws.coordinates.world} (${Math.round(ws.coordinates.x)}, ${Math.round(ws.coordinates.y)}, ${Math.round(ws.coordinates.z)})`
-                              : ' — UNPLACED'}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    ))}
+                  </div>
+                </div>
 
-                    <div className="border border-border-subtle bg-canvas p-3">
-                      <div className="font-bold text-ink-primary">
-                        [MOUNTS]: {worldData?.mounts?.mounts?.length ?? 0}{' '}
-                        {lang === 'vi' ? 'thú cưỡi' : 'mounts'}
+                <div className="border border-border-subtle bg-canvas p-3">
+                  <div className="font-bold text-ink-primary">
+                    [MOUNTS]: {inspectData.mounts?.mounts?.length ?? 0}{' '}
+                    {lang === 'vi' ? 'thú cưỡi' : 'mounts'}
+                  </div>
+                  <div className="mt-1 space-y-1 text-[11px] text-ink-secondary">
+                    {(inspectData.mounts?.mounts || []).map((m) => (
+                      <div key={m.slot} className="flex items-center gap-2">
+                        <ItemSlotCell item={m.saddleStorage?.items?.[0]} size="sm" />
+                        <span>
+                          SLOT #{m.slot}: <strong>{m.customName || m.type}</strong> (
+                          {m.saddleStorage?.items?.length || 0} items in saddlebag)
+                        </span>
                       </div>
-                      <div className="mt-1 space-y-1 text-[11px] text-ink-secondary">
-                        {(worldData?.mounts?.mounts || []).map((m) => (
-                          <div key={m.slot}>
-                            • SLOT #{m.slot}: <strong>{m.customName || m.type}</strong>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    ))}
+                  </div>
+                </div>
 
-                    <div className="border border-border-subtle bg-canvas p-3">
-                      <div className="font-bold text-ink-primary">
-                        [JOBS]:{' '}
-                        {Object.entries(worldData?.jobs?.jobs || {})
-                          .map(([k, v]) => `${k.toUpperCase()} LV.${v?.level ?? 1}`)
-                          .join(' | ') || 'NONE'}
-                      </div>
-                    </div>
-                  </>
-                )}
+                <div className="border border-border-subtle bg-canvas p-3">
+                  <div className="font-bold text-ink-primary">
+                    [JOBS]:{' '}
+                    {Object.entries(inspectData.jobs?.jobs || {})
+                      .map(([k, v]) => `${k.toUpperCase()} LV.${v?.level ?? 1}`)
+                      .join(' | ') || 'NONE'}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -629,7 +755,7 @@ function PlayerInspectWorkspace({ initialUsername, onSelectNewTarget, lang }) {
               <DataTable
                 columns={tradeColumns}
                 rows={tradesList}
-                rowKey={(row, idx) => row.tradeId || row._id || idx}
+                rowKey={(row, idx) => row.id || idx}
                 loading={marketLoading}
               />
             )}
@@ -645,8 +771,7 @@ export default function PlayerInspectPage() {
   const params = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const resolvedUsername =
-    params.username || searchParams.get('username') || '';
+  const resolvedUsername = params.username || searchParams.get('username') || '';
 
   const handleSelectNewTarget = (nextUsername) => {
     setSearchParams({ username: nextUsername });
