@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { guildApi } from '../../api/services/guild.api';
 import { useAsyncData } from '../../hooks/useAsyncData';
-import { useDebounce } from '../../hooks/useDebounce';
 import { useLanguage } from '../../hooks/useLanguage';
 import ChestGrid from '../../components/rpg/ChestGrid';
 import CurrencyDisplay from '../../components/rpg/CurrencyDisplay';
@@ -16,13 +15,26 @@ const GUILD_VAULT_SLOT_INDICES = [
   ...Array.from({ length: 7 }, (_, i) => 46 + i),
 ];
 
+function matchesVaultItem(item, normalizedQuery) {
+  if (!item || !normalizedQuery) return true;
+  const name = String(item.displayName || '').toLowerCase();
+  const type = String(item.type || '').toLowerCase();
+  const rpgId = String(item.tags?.rpg_item_id || '').toLowerCase();
+  const loreText = Array.isArray(item.lore) ? item.lore.join(' ').toLowerCase() : '';
+  return (
+    name.includes(normalizedQuery) ||
+    type.includes(normalizedQuery) ||
+    rpgId.includes(normalizedQuery) ||
+    loreText.includes(normalizedQuery)
+  );
+}
+
 export default function GuildDetailPage({ isMe = false }) {
   const { id } = useParams();
   const { lang } = useLanguage();
 
   const [vaultPage, setVaultPage] = useState(1);
   const [vaultQuery, setVaultQuery] = useState('');
-  const debouncedVaultQuery = useDebounce(vaultQuery, 350);
 
   const {
     data: guild,
@@ -33,17 +45,17 @@ export default function GuildDetailPage({ isMe = false }) {
     [isMe, id]
   );
 
+  // Tải 1 lần toàn bộ các trang rương đã mở khóa (?pages=all) để chuyển trang & lọc tức thì ở client
   const {
     data: vaultData,
     loading: vaultLoading,
     error: vaultError,
   } = useAsyncData(
     () => {
-      const trimmedQ = debouncedVaultQuery.trim();
-      const query = trimmedQ ? { pages: 'all', q: trimmedQ } : { page: vaultPage };
+      const query = { pages: 'all' };
       return isMe ? guildApi.getMyGuildVault(query) : guildApi.getGuildVault(id, query);
     },
-    [isMe, id, vaultPage, debouncedVaultQuery]
+    [isMe, id]
   );
 
   if (guildLoading) {
@@ -74,12 +86,14 @@ export default function GuildDetailPage({ isMe = false }) {
   const leaderEntity =
     members.find((m) => String(m.guildRole).toUpperCase() === 'LEADER') || null;
 
+  const allVaults = Array.isArray(vaultData?.vaults) ? vaultData.vaults : [];
   const totalVaultPages = Math.max(
     1,
     Number(
       vaultData?.vaultSummary?.totalPages ??
         guild.vaultSummary?.totalPages ??
         guild.vaultPagesCount ??
+        allVaults.length ??
         1
     ) || 1
   );
@@ -87,14 +101,16 @@ export default function GuildDetailPage({ isMe = false }) {
   const pagesOverview =
     vaultData?.vaultSummary?.pagesOverview || guild.vaultSummary?.pagesOverview || [];
 
-  const isSearchMode = vaultData?.mode === 'SEARCH';
-  const currentVaultPageObj = !isSearchMode
-    ? (vaultData?.vaults || []).find((v) => Number(v.page) === vaultPage) ||
-      vaultData?.vaults?.[0]
-    : null;
+  const normalizedQuery = vaultQuery.trim().toLowerCase();
+  const isSearchMode = Boolean(normalizedQuery);
+
+  const currentVaultPageObj =
+    allVaults.find((v) => Number(v.page) === vaultPage) || allVaults[0] || null;
 
   const vaultItems = isSearchMode
-    ? vaultData?.items || []
+    ? allVaults.flatMap((v) =>
+        (v.items || []).filter((item) => matchesVaultItem(item, normalizedQuery))
+      )
     : currentVaultPageObj?.items || [];
 
   const memberColumns = [
@@ -209,16 +225,13 @@ export default function GuildDetailPage({ isMe = false }) {
             <input
               type="text"
               value={vaultQuery}
-              onChange={(e) => {
-                setVaultQuery(e.target.value);
-                setVaultPage(1);
-              }}
+              onChange={(e) => setVaultQuery(e.target.value)}
               placeholder={lang === 'vi' ? 'Lọc vật phẩm trong rương...' : 'Filter vault items...'}
               className="border border-border-strong bg-canvas px-2.5 py-1 font-mono text-xs text-ink-primary outline-none"
             />
           </div>
 
-          {!debouncedVaultQuery.trim() && (
+          {!isSearchMode && (
             <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
               {Array.from({ length: totalVaultPages }, (_, i) => i + 1).map((pg) => {
                 const overview = pagesOverview.find((o) => Number(o.page) === pg);
