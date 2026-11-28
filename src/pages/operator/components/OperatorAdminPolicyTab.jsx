@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { operatorApi } from '../../../api/services/operator.api';
 import { useAsyncData } from '../../../hooks/useAsyncData';
 import PlayerBadge from '../../../components/rpg/PlayerBadge';
@@ -11,7 +11,7 @@ export default function OperatorAdminPolicyTab({ lang }) {
   const [roleStatusMsg, setRoleStatusMsg] = useState(null);
   const [roleSubmitting, setRoleSubmitting] = useState(false);
 
-  const [policyJson, setPolicyJson] = useState('');
+  const [policyDraft, setPolicyDraft] = useState(null);
   const [policyMsg, setPolicyMsg] = useState(null);
   const [policySaving, setPolicySaving] = useState(false);
 
@@ -21,16 +21,18 @@ export default function OperatorAdminPolicyTab({ lang }) {
     reload: reloadStaff,
   } = useAsyncData(() => operatorApi.getStaffList(), []);
 
-  const { data: policyData, loading: policyLoading } = useAsyncData(
-    () => operatorApi.getModeratorPolicy(),
-    []
-  );
+  const {
+    data: policyData,
+    loading: policyLoading,
+    reload: reloadPolicy,
+  } = useAsyncData(() => operatorApi.getModeratorPolicy(), []);
 
-  useEffect(() => {
-    if (policyData) {
-      setPolicyJson(JSON.stringify(policyData, null, 2));
-    }
-  }, [policyData]);
+  const effectivePolicyJson =
+    policyDraft !== null
+      ? policyDraft
+      : policyData
+      ? JSON.stringify(policyData, null, 2)
+      : '';
 
   const handleRoleUpdate = async (e) => {
     e.preventDefault();
@@ -63,8 +65,10 @@ export default function OperatorAdminPolicyTab({ lang }) {
     setPolicySaving(true);
     setPolicyMsg(null);
     try {
-      const parsed = JSON.parse(policyJson);
+      const parsed = JSON.parse(effectivePolicyJson);
       await operatorApi.updateModeratorPolicy(parsed);
+      await reloadPolicy();
+      setPolicyDraft(null);
       setPolicyMsg({
         ok: true,
         text:
@@ -183,8 +187,8 @@ export default function OperatorAdminPolicyTab({ lang }) {
           <form onSubmit={handleSavePolicy} className="space-y-3">
             <textarea
               rows={12}
-              value={policyJson}
-              onChange={(e) => setPolicyJson(e.target.value)}
+              value={effectivePolicyJson}
+              onChange={(e) => setPolicyDraft(e.target.value)}
               className="w-full border border-border-strong bg-canvas p-3 font-mono text-xs text-ink-primary"
             />
 

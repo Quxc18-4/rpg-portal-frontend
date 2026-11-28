@@ -1,7 +1,6 @@
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import AppShell from '../layouts/AppShell';
 import ProtectedRoute from '../layouts/ProtectedRoute';
-import ModulePlaceholder from '../components/ui/ModulePlaceholder';
 import LoginPage from '../pages/auth/LoginPage';
 import AuctionMarketPage from '../pages/market/AuctionMarketPage';
 import LicenseMarketPage from '../pages/market/LicenseMarketPage';
@@ -10,6 +9,7 @@ import GuildDirectoryPage from '../pages/guild/GuildDirectoryPage';
 import GuildDetailPage from '../pages/guild/GuildDetailPage';
 import PlayerHubPage from '../pages/player/PlayerHubPage';
 import PublicProfilePage from '../pages/player/PublicProfilePage';
+import OperatorAuditPage from '../pages/operator/OperatorAuditPage';
 
 const router = createBrowserRouter([
   {
@@ -54,7 +54,7 @@ const router = createBrowserRouter([
         path: 'operator',
         element: (
           <ProtectedRoute minRole="MODERATOR">
-            <ModulePlaceholder code="OPERATOR_AUDIT" endpoint="GET /api/v1/operator/overview" />
+            <OperatorAuditPage />
           </ProtectedRoute>
         ),
       },

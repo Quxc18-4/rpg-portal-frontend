@@ -106,7 +106,11 @@ export default function OperatorAuditPage() {
         <OperatorTransactionsTab onInspectTarget={handleInspectJump} lang={lang} />
       )}
       {activeTab === 'INSPECT' && (
-        <OperatorPlayerInspectTab initialUsername={inspectTarget} lang={lang} />
+        <OperatorPlayerInspectTab
+          key={inspectTarget || 'default'}
+          initialUsername={inspectTarget}
+          lang={lang}
+        />
       )}
       {activeTab === 'SCAN_LOGS' && (
         <OperatorItemScanLogsTab onInspectTarget={handleInspectJump} lang={lang} />

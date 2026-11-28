@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { operatorApi } from '../../../api/services/operator.api';
 import { useAsyncData } from '../../../hooks/useAsyncData';
 import ChestGrid from '../../../components/rpg/ChestGrid';
@@ -31,15 +31,6 @@ export default function OperatorPlayerInspectTab({ initialUsername = '', lang })
   const [confirmingAction, setConfirmingAction] = useState(false);
   const [actionFeedback, setActionFeedback] = useState(null);
   const [actionSubmitting, setActionSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (initialUsername && initialUsername !== targetUsername) {
-      setSearchInput(initialUsername);
-      setTargetUsername(initialUsername);
-      setSelectedSlot(null);
-      setInvSearchResults(null);
-    }
-  }, [initialUsername, targetUsername]);
 
   const {
     data: inspectData,
