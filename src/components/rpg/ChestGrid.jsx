@@ -44,7 +44,7 @@ export default function ChestGrid({
   return (
     <div className="inline-block border-2 border-border-strong bg-[#C6C6C6] p-2.5">
       {title && (
-        <div className="mb-2 flex items-center justify-between font-mono text-xs font-bold text-[#373737]">
+        <div className="mb-2 flex items-center justify-between font-mono text-xs font-bold text-mc-slot-dark">
           <span>{title}</span>
           <span className="tabular-nums">
             [{items.length}/{effectiveTotal} {lang === 'vi' ? 'Ô' : 'SLOTS'}]
